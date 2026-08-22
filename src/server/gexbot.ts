@@ -1,4 +1,4 @@
-import type { FeedKind, FeedKey, FeedSnapshot, Ticker } from "../shared/types";
+import type { FeedKind, FeedKey, FeedSnapshot, StrikeRow, Ticker } from "../shared/types";
 
 const BASE_URL = "https://api.gex.bot/v2";
 const USER_AGENT = "gex-cockpit/0.2.0 (local)";
@@ -64,7 +64,9 @@ function parseFeed(ticker: Ticker, kind: FeedKind, raw: RawGexFull): FeedSnapsho
     netGexVol: raw.sum_gex_vol,
     netGexOI: raw.sum_gex_oi,
     minDte: raw.min_dte,
-    strikes: raw.strikes.map(row => [row[0], row[1], row[2]] as [number, number, number]),
+    strikes: raw.strikes.map(
+      row => [row[0], row[1], row[2], Array.isArray(row[3]) ? row[3] : []] as StrikeRow,
+    ),
     status: "live",
   };
 }

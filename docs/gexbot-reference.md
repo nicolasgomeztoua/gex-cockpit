@@ -56,6 +56,15 @@ Single source of truth in code: `src/client/theme.ts` (`GEXBOT`). Sampled values
 Colors are estimated from screenshots — if any looks off next to the real site, correct it in
 `theme.ts` and this file together.
 
+## Covered as of v0.3 (sidebar v4 pass)
+
+Cyan current-price line + pill · dashed cyan now-line · orange top profile-value ticks ·
+priors dots (blue ramp classic, dimmed cyan→purple state) · continuous zero-gamma session
+line · per-level on-chart name tags · canvas watermark · chart toolbar (fit / fullscreen /
+PNG) · collapsible shadcn sidebar with per-level line/label/alert controls · level alerts
+(system notifications + synthesized sounds). Still absent: ±1σ expected-move lines (not in
+the REST API — deliberately omitted), playback controls (waiting on the replay feature).
+
 ## Cockpit-specific deviations (intentional)
 
 - Two charts stacked (NDX top, QQQ bottom) instead of one ticker at a time — that's the point

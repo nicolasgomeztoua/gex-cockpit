@@ -1,6 +1,6 @@
 import { fetchFeed } from "./gexbot";
 import { persistSnapshot } from "./db";
-import type { FeedKey, FeedKind, FeedSnapshot, Ticker } from "../shared/types";
+import type { FeedKey, FeedKind, FeedSnapshot, StrikeRow, Ticker } from "../shared/types";
 
 const POLL_MS = Number(process.env.POLL_MS ?? 10_000);
 const MAX_BACKOFF_MS = 5 * 60_000;
@@ -174,10 +174,11 @@ async function startMock(): Promise<void> {
       for (const kind of ["state", "oi"] as FeedKind[]) {
         const key = `${ticker}:${kind}` as FeedKey;
         const base = bases.get(key)!;
-        const strikes: [number, number, number][] = base.strikes.map(([k, v, o]) => [
+        const strikes: StrikeRow[] = base.strikes.map(([k, v, o, p]) => [
           k,
           v * (1 + 0.06 * randn()),
           o * (1 + 0.06 * randn()),
+          p.map(x => x * (1 + 0.04 * randn())),
         ]);
         const near = strikes.filter(([k]) => Math.abs(k - spot) / spot < 0.012 && k !== 0);
         const wall = (col: 1 | 2, sign: 1 | -1) => {

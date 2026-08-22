@@ -1,13 +1,28 @@
 /**
- * Headless UI probe: loads the app, flips a named sidebar toggle, and reports
- * what actually changed (localStorage diff + before/after screenshots).
+ * Headless UI probe: loads the app, flips a named sidebar control, and reports
+ * what actually changed (localStorage path diff + before/after screenshots).
  *
- *   bun scripts/ui-probe.ts "Major Short Gamma"
+ *   bun scripts/ui-probe.ts "Major Short Gamma"          # main line switch
+ *   bun scripts/ui-probe.ts "Major Short Gamma" label    # chart-label mini-toggle
+ *   bun scripts/ui-probe.ts "Zero Gamma" alert           # alert mini-toggle
+ *   bun scripts/ui-probe.ts --alert-smoke                # enable alerts, wait for __lastAlert
  */
 import puppeteer from "puppeteer-core";
 
-const label = process.argv[2] ?? "Major Short Gamma";
+const arg = process.argv[2] ?? "Major Short Gamma";
+const control = (process.argv[3] ?? "line") as "line" | "label" | "alert";
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const SETTINGS_KEY = "gex-cockpit-settings-v3";
+
+/** Flatten to "levels.msg.line"-style paths for diffing. */
+function flatten(obj: unknown, prefix = "", out: Record<string, unknown> = {}) {
+  if (typeof obj !== "object" || obj === null) {
+    out[prefix] = obj;
+    return out;
+  }
+  for (const [k, v] of Object.entries(obj)) flatten(v, prefix ? `${prefix}.${k}` : k, out);
+  return out;
+}
 
 const browser = await puppeteer.launch({
   executablePath: CHROME,
@@ -17,36 +32,74 @@ const browser = await puppeteer.launch({
 });
 try {
   const page = await browser.newPage();
+  const ctx = browser.defaultBrowserContext();
+  await ctx.overridePermissions("http://127.0.0.1:4321", ["notifications"]);
   await page.goto("http://127.0.0.1:4321/", { waitUntil: "networkidle2", timeout: 20_000 }).catch(() => {});
   await new Promise(r => setTimeout(r, 6000)); // let SSE + charts settle
 
-  const readSettings = () =>
-    page.evaluate(() => localStorage.getItem("gex-cockpit-settings-v2") ?? "{}");
+  const readSettings = () => page.evaluate(k => localStorage.getItem(k) ?? "{}", SETTINGS_KEY);
 
-  const before = JSON.parse(await readSettings());
-  await page.screenshot({ path: "/tmp/probe_before.png" });
+  // expand the sidebar if it starts collapsed
+  await page.evaluate(() => {
+    const sidebar = document.querySelector('[data-slot="sidebar"]');
+    if (sidebar?.getAttribute("data-state") === "collapsed") {
+      (document.querySelector('[data-slot="sidebar-trigger"]') as HTMLElement | null)?.click();
+    }
+  });
+  await new Promise(r => setTimeout(r, 500));
 
-  const clicked = await page.evaluate(lbl => {
-    const nodes = [...document.querySelectorAll("aside *")] as HTMLElement[];
-    const row = nodes.find(n => n.childElementCount === 0 && n.textContent?.trim() === lbl);
-    if (!row) return "label not found";
-    const rowEl = row.closest("div, label");
-    const btn = rowEl?.parentElement
-      ?.querySelector(`button[role="switch"], button`) as HTMLElement | null;
-    // search within the same row first
-    const inRow = rowEl?.querySelector(`button[role="switch"], button`) as HTMLElement | null;
-    (inRow ?? btn)?.click();
-    return inRow ? "clicked in-row" : btn ? "clicked sibling" : "no button";
-  }, label);
+  if (arg === "--alert-smoke") {
+    // enable alerts with a huge approach distance so the next tick fires
+    await page.evaluate(k => {
+      const s = JSON.parse(localStorage.getItem(k) ?? "{}");
+      s.alerts = { enabled: true, mode: "both", distance: 10000, distanceUnit: "points", cooldownSec: 300, sound: "off" };
+      s.levels = Object.fromEntries(
+        ["mlg", "msg", "zg", "mpv", "mnv", "mpo", "mno"].map(l => [l, { line: true, label: false, alert: true }]),
+      );
+      localStorage.setItem(k, JSON.stringify(s));
+    }, SETTINGS_KEY);
+    await page.reload({ waitUntil: "networkidle2", timeout: 20_000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 12_000)); // needs two ticks (first is suppressed)
+    const result = await page.evaluate(() => ({
+      lastAlert: (window as any).__lastAlert ?? null,
+      permission: Notification.permission,
+    }));
+    await page.screenshot({ path: "/tmp/probe_after.png" });
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    const before = JSON.parse(await readSettings());
+    await page.screenshot({ path: "/tmp/probe_before.png" });
 
-  await new Promise(r => setTimeout(r, 1500));
-  const after = JSON.parse(await readSettings());
-  await page.screenshot({ path: "/tmp/probe_after.png" });
+    const clicked = await page.evaluate(
+      (lbl, ctl) => {
+        const nodes = [...document.querySelectorAll('[data-slot="sidebar"] *')] as HTMLElement[];
+        const row = nodes
+          .find(n => n.childElementCount === 0 && n.textContent?.trim() === lbl)
+          ?.closest("div[data-level], div, label");
+        if (!row) return "label not found (section collapsed?)";
+        const target =
+          ctl === "line"
+            ? row.querySelector<HTMLElement>('button[role="switch"]')
+            : row.querySelector<HTMLElement>(`[data-probe="${ctl}"]`);
+        if (!target) return `no ${ctl} control in row`;
+        target.click();
+        return `clicked ${ctl}`;
+      },
+      arg,
+      control,
+    );
 
-  const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(
-    k => JSON.stringify(before[k]) !== JSON.stringify(after[k]),
-  );
-  console.log(JSON.stringify({ label, clicked, changedKeys: changed, before, after }, null, 2));
+    await new Promise(r => setTimeout(r, 1500));
+    const after = JSON.parse(await readSettings());
+    await page.screenshot({ path: "/tmp/probe_after.png" });
+
+    const flatBefore = flatten(before);
+    const flatAfter = flatten(after);
+    const changedPaths = [...new Set([...Object.keys(flatBefore), ...Object.keys(flatAfter)])]
+      .filter(k => JSON.stringify(flatBefore[k]) !== JSON.stringify(flatAfter[k]))
+      .sort();
+    console.log(JSON.stringify({ label: arg, control, clicked, changedPaths }, null, 2));
+  }
 } finally {
   await browser.close();
 }

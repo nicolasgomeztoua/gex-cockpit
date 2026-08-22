@@ -15,6 +15,9 @@ export interface Majors {
   zeroGamma: number | null;
 }
 
+/** [strike, volValue, oiValue, priorValues (1/5/10/15/30-min prior snapshots)] */
+export type StrikeRow = [number, number, number, number[]];
+
 export interface FeedSnapshot {
   feed: FeedKey;
   ticker: Ticker;
@@ -28,8 +31,8 @@ export interface FeedSnapshot {
   netGexVol: number;
   netGexOI: number;
   minDte: number;
-  /** [strike, volValue, oiValue] — state responses have oiValue = 0 */
-  strikes: [number, number, number][];
+  /** state responses have oiValue = 0 */
+  strikes: StrikeRow[];
   status: "live" | "error";
   error?: string;
 }

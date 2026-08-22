@@ -3,8 +3,11 @@ import { createRoot } from "react-dom/client";
 import { useStream } from "./useStream";
 import { GexChart } from "./GexChart";
 import { Sidebar } from "./Sidebar";
+import { SidebarProvider, SidebarTrigger, useSidebar } from "./components/ui/sidebar";
+import { TooltipProvider } from "./components/ui/tooltip";
+import { useLevelAlerts } from "./alerts/useLevelAlerts";
 import { loadSettings, saveSettings, type LayerSettings } from "./theme";
-import type { FeedSnapshot } from "../shared/types";
+import type { FeedSnapshot, StrikeRow } from "../shared/types";
 
 /** Rescale a snapshot's price fields (spot/strikes/majors) by `r`. */
 function scaleSnapshot(s: FeedSnapshot, r: number): FeedSnapshot {
@@ -18,12 +21,22 @@ function scaleSnapshot(s: FeedSnapshot, r: number): FeedSnapshot {
       negOI: s.majors.negOI * r,
       zeroGamma: s.majors.zeroGamma ? s.majors.zeroGamma * r : s.majors.zeroGamma,
     },
-    strikes: s.strikes.map(([k, v, o]) => [k * r, v, o] as [number, number, number]),
+    // priors are GEX values, not prices — only the strike is rescaled
+    strikes: s.strikes.map(([k, v, o, p]) => [k * r, v, o, p] as StrikeRow),
   };
 }
 
 const scaleSeries = (series: [number, number][], r: number) =>
   series.map(([t, v]) => [t, v * r] as [number, number]);
+
+/** Expand button that floats over the charts when the sidebar is collapsed. */
+function CollapsedTrigger() {
+  const { open } = useSidebar();
+  if (open) return null;
+  return (
+    <SidebarTrigger className="absolute top-2 right-2 z-20 rounded bg-black/70 backdrop-blur-sm" />
+  );
+}
 
 function App() {
   const s = useStream();
@@ -73,39 +86,51 @@ function App() {
 
   const historyKey = useNq ? "nq" : "spot";
 
+  // alerts run on the same displayed-unit data the charts show
+  useLevelAlerts(
+    [
+      { label: "NDX", state: ndxState, oi: ndxOi },
+      { label: "QQQ", state: qqqState, oi: qqqOi },
+    ],
+    settings,
+  );
+
   return (
-    <div className="flex h-full bg-background">
-      <main className="flex min-w-0 flex-1 flex-col">
-        <GexChart
-          label="NDX"
-          unitTag={useNq ? "NQ pts" : undefined}
-          historyKey={`ndx:${historyKey}`}
-          state={ndxState}
-          oi={ndxOi}
-          spotSeries={ndxSeries}
-          zgSeries={ndxZg}
+    <TooltipProvider>
+      <SidebarProvider>
+        <main className="relative flex min-w-0 flex-1 flex-col">
+          <GexChart
+            label="NDX"
+            unitTag={useNq ? "NQ pts" : undefined}
+            historyKey={`ndx:${historyKey}`}
+            state={ndxState}
+            oi={ndxOi}
+            spotSeries={ndxSeries}
+            zgSeries={ndxZg}
+            settings={settings}
+          />
+          <div className="h-px shrink-0 bg-border" />
+          <GexChart
+            label="QQQ"
+            unitTag={useNq ? "≈ NQ pts" : undefined}
+            historyKey={`qqq:${historyKey}`}
+            state={qqqState}
+            oi={qqqOi}
+            spotSeries={qqqSeries}
+            zgSeries={qqqZg}
+            settings={settings}
+          />
+          <CollapsedTrigger />
+        </main>
+        <Sidebar
           settings={settings}
+          onChange={setSettings}
+          feeds={s.feeds}
+          connected={s.connected}
+          mock={s.mock}
         />
-        <div className="h-px shrink-0 bg-border" />
-        <GexChart
-          label="QQQ"
-          unitTag={useNq ? "≈ NQ pts" : undefined}
-          historyKey={`qqq:${historyKey}`}
-          state={qqqState}
-          oi={qqqOi}
-          spotSeries={qqqSeries}
-          zgSeries={qqqZg}
-          settings={settings}
-        />
-      </main>
-      <Sidebar
-        settings={settings}
-        onChange={setSettings}
-        feeds={s.feeds}
-        connected={s.connected}
-        mock={s.mock}
-      />
-    </div>
+      </SidebarProvider>
+    </TooltipProvider>
   );
 }
 

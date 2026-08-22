@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   createChart,
+  createTextWatermark,
   CandlestickSeries,
   LineSeries,
   LineStyle,
@@ -8,105 +9,13 @@ import {
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
-  type ISeriesPrimitive,
-  type IPrimitivePaneRenderer,
-  type IPrimitivePaneView,
-  type SeriesAttachedParameter,
-  type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { GEXBOT, type LayerSettings } from "./theme";
+import { Camera, Expand, Maximize } from "lucide-react";
+import { GexProfilePrimitive, VerticalNowLinePrimitive, type BarSet } from "./chart/primitives";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
+import { GEXBOT, LEVEL_META, type LayerSettings, type LevelKey } from "./theme";
 import type { FeedSnapshot } from "../shared/types";
-
-// ---------------------------------------------------------------------------
-// GEX profile primitive: horizontal bars anchored to the right edge at their
-// strike prices — the gexbot look. Bar sets (state γ / vol / OI) share each
-// strike slot; small values render as dots, and bar height is capped so tight
-// strike grids (NDX) and wide ones (QQQ) look alike.
-
-interface BarSet {
-  rows: [number, number][]; // [strike, value]
-  pos: string;
-  neg: string;
-}
-
-class GexProfilePrimitive implements ISeriesPrimitive<Time> {
-  private _param: SeriesAttachedParameter<Time> | null = null;
-  private _sets: BarSet[] = [];
-  private _view: IPrimitivePaneView;
-
-  constructor() {
-    const self = this;
-    this._view = {
-      zOrder: () => "normal" as const,
-      renderer: (): IPrimitivePaneRenderer => ({
-        draw: target => {
-          const param = self._param;
-          if (!param || !self._sets.length) return;
-          const series = param.series;
-          target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
-            const maxWidth = mediaSize.width * 0.42;
-            const nSets = self._sets.length;
-            for (let i = 0; i < nSets; i++) {
-              const set = self._sets[i];
-              if (!set.rows.length) continue;
-              const maxAbs = Math.max(...set.rows.map(r => Math.abs(r[1])));
-              if (maxAbs <= 0) continue;
-              const gaps: number[] = [];
-              for (let g = 1; g < set.rows.length; g++)
-                gaps.push(set.rows[g][0] - set.rows[g - 1][0]);
-              gaps.sort((a, b) => a - b);
-              const gap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 1;
-              const k0 = set.rows[Math.floor(set.rows.length / 2)][0];
-              const y0 = series.priceToCoordinate(k0);
-              const y1 = series.priceToCoordinate(k0 + gap);
-              if (y0 === null || y1 === null) continue;
-              const slotH = Math.abs(y0 - y1);
-              // capped: QQQ's $1 grid must not produce chunky bars
-              const subH = Math.min(6, Math.max(2, (slotH * 0.72) / nSets));
-              const stackH = subH * nSets;
-
-              ctx.globalAlpha = 0.92;
-              for (const [strike, value] of set.rows) {
-                if (value === 0) continue;
-                const y = series.priceToCoordinate(strike);
-                if (y === null || y < -slotH || y > mediaSize.height + slotH) continue;
-                const w = (Math.abs(value) / maxAbs) * maxWidth;
-                const yTop = y - stackH / 2 + i * subH;
-                ctx.fillStyle = value >= 0 ? set.pos : set.neg;
-                if (w < 8) {
-                  // small values render as dots at their bar-length position (gexbot look)
-                  ctx.fillRect(mediaSize.width - w - 2, yTop + subH / 2 - 1.25, 2.5, 2.5);
-                } else {
-                  ctx.fillRect(mediaSize.width - w, yTop, w, Math.max(2, subH - 1));
-                }
-              }
-              ctx.globalAlpha = 1;
-            }
-          });
-        },
-      }),
-    };
-  }
-
-  attached(param: SeriesAttachedParameter<Time>): void {
-    this._param = param;
-  }
-  detached(): void {
-    this._param = null;
-  }
-  paneViews(): readonly IPrimitivePaneView[] {
-    return [this._view];
-  }
-  updateAllViews(): void {}
-
-  setData(sets: BarSet[]): void {
-    this._sets = sets;
-    this._param?.requestUpdate();
-  }
-}
-
-// ---------------------------------------------------------------------------
 
 const fmtPrice = (v: number) =>
   Math.abs(v) >= 3000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(2);
@@ -143,11 +52,21 @@ function toCandles(series: [number, number][]): CandlestickData<UTCTimestamp>[] 
 }
 
 interface Level {
-  key: string;
+  key: LevelKey;
   price: number;
   color: string;
   style: LineStyle;
+  title: string;
 }
+
+const LEVEL_STYLE: Record<Exclude<LevelKey, "zg">, LineStyle> = {
+  mlg: LineStyle.Solid,
+  msg: LineStyle.Solid,
+  mpv: LineStyle.Dashed,
+  mnv: LineStyle.Dashed,
+  mpo: LineStyle.Dotted,
+  mno: LineStyle.Dotted,
+};
 
 /** All level lines except zero gamma, which is a continuous series. */
 function levelLines(
@@ -155,22 +74,25 @@ function levelLines(
   oi: FeedSnapshot | undefined,
   s: LayerSettings,
 ): Level[] {
+  const src: Record<Exclude<LevelKey, "zg">, number | undefined> = {
+    mlg: state?.majors.posVol,
+    msg: state?.majors.negVol,
+    mpv: oi?.majors.posVol,
+    mnv: oi?.majors.negVol,
+    mpo: oi?.majors.posOI,
+    mno: oi?.majors.negOI,
+  };
   const out: Level[] = [];
-  if (state) {
-    if (s.majorLongGamma && state.majors.posVol)
-      out.push({ key: "mlg", price: state.majors.posVol, color: GEXBOT.state.longGamma, style: LineStyle.Solid });
-    if (s.majorShortGamma && state.majors.negVol)
-      out.push({ key: "msg", price: state.majors.negVol, color: GEXBOT.state.shortGamma, style: LineStyle.Solid });
-  }
-  if (oi) {
-    if (s.majorPosVol && oi.majors.posVol)
-      out.push({ key: "mpv", price: oi.majors.posVol, color: GEXBOT.classic.majorPosVol, style: LineStyle.Dashed });
-    if (s.majorNegVol && oi.majors.negVol)
-      out.push({ key: "mnv", price: oi.majors.negVol, color: GEXBOT.classic.majorNegVol, style: LineStyle.Dashed });
-    if (s.majorPosOI && oi.majors.posOI)
-      out.push({ key: "mpo", price: oi.majors.posOI, color: GEXBOT.classic.majorPosOI, style: LineStyle.Dotted });
-    if (s.majorNegOI && oi.majors.negOI)
-      out.push({ key: "mno", price: oi.majors.negOI, color: GEXBOT.classic.majorNegOI, style: LineStyle.Dotted });
+  for (const key of Object.keys(src) as Exclude<LevelKey, "zg">[]) {
+    const price = src[key];
+    if (!price || !s.levels[key].line) continue;
+    out.push({
+      key,
+      price,
+      color: LEVEL_META[key].color,
+      style: LEVEL_STYLE[key],
+      title: s.levels[key].label ? LEVEL_META[key].name : "",
+    });
   }
   return out;
 }
@@ -197,11 +119,13 @@ export function GexChart({
   zgSeries,
   settings,
 }: Props) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const mainSeriesRef = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Line"> | null>(null);
   const zgSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const primitiveRef = useRef<GexProfilePrimitive | null>(null);
+  const nowLineRef = useRef<VerticalNowLinePrimitive | null>(null);
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
   const lastTsRef = useRef<number | null>(null);
   const lastZgTsRef = useRef<number | null>(null);
@@ -245,6 +169,18 @@ export function GexChart({
         priceFormatter: fmtPrice,
       },
     });
+    createTextWatermark(chart.panes()[0], {
+      horzAlign: "center",
+      vertAlign: "center",
+      lines: [
+        {
+          text: "gex cockpit",
+          color: "rgba(255,255,255,0.05)",
+          fontSize: 40,
+          fontFamily: "'SF Mono', Menlo, Consolas, monospace",
+        },
+      ],
+    });
     // zero gamma is a session-long line, like price — excluded from autoscale
     const zg = chart.addSeries(LineSeries, {
       color: GEXBOT.classic.zeroGamma,
@@ -262,6 +198,7 @@ export function GexChart({
       mainSeriesRef.current = null;
       zgSeriesRef.current = null;
       primitiveRef.current = null;
+      nowLineRef.current = null;
       priceLinesRef.current = new Map();
     };
   }, []);
@@ -272,12 +209,16 @@ export function GexChart({
     if (!chart) return;
     if (mainSeriesRef.current) {
       if (primitiveRef.current) mainSeriesRef.current.detachPrimitive(primitiveRef.current);
+      if (nowLineRef.current) mainSeriesRef.current.detachPrimitive(nowLineRef.current);
       chart.removeSeries(mainSeriesRef.current);
       mainSeriesRef.current = null;
       priceLinesRef.current = new Map();
       lastTsRef.current = null;
       candleRef.current = null;
     }
+    // cyan current-price line, gexbot-style. Known limitation: on candles the
+    // axis pill follows the last candle's up/down color (no independent
+    // pill-color option in lightweight-charts).
     const series =
       settings.chartType === "candles"
         ? chart.addSeries(CandlestickSeries, {
@@ -287,17 +228,26 @@ export function GexChart({
             borderDownColor: GEXBOT.state.candleDown,
             wickUpColor: GEXBOT.state.candleUp,
             wickDownColor: GEXBOT.state.candleDown,
-            priceLineColor: GEXBOT.textDim,
+            priceLineVisible: true,
+            priceLineColor: GEXBOT.state.longGamma,
+            priceLineStyle: LineStyle.Solid,
+            priceLineWidth: 1,
           })
         : chart.addSeries(LineSeries, {
             color: GEXBOT.state.spotHistory,
             lineWidth: 2,
-            priceLineColor: GEXBOT.textDim,
+            priceLineVisible: true,
+            priceLineColor: GEXBOT.state.longGamma,
+            priceLineStyle: LineStyle.Solid,
+            priceLineWidth: 1,
           });
     const primitive = new GexProfilePrimitive();
+    const nowLine = new VerticalNowLinePrimitive();
     series.attachPrimitive(primitive);
+    series.attachPrimitive(nowLine);
     mainSeriesRef.current = series;
     primitiveRef.current = primitive;
+    nowLineRef.current = nowLine;
   }, [settings.chartType]);
 
   // spot data: full load when the basis changes, incremental update() otherwise
@@ -322,29 +272,30 @@ export function GexChart({
         );
       }
       lastTsRef.current = spotSeries[spotSeries.length - 1][0];
-      return;
-    }
-    for (const [sec, v] of spotSeries) {
-      if (sec <= lastTs) continue;
-      if (isCandles) {
-        const bucket = (Math.floor(sec / 60) * 60) as UTCTimestamp;
-        const cur = candleRef.current;
-        if (cur && cur.time === bucket) {
-          candleRef.current = {
-            ...cur,
-            close: v,
-            high: Math.max(cur.high, v),
-            low: Math.min(cur.low, v),
-          };
+    } else {
+      for (const [sec, v] of spotSeries) {
+        if (sec <= lastTs) continue;
+        if (isCandles) {
+          const bucket = (Math.floor(sec / 60) * 60) as UTCTimestamp;
+          const cur = candleRef.current;
+          if (cur && cur.time === bucket) {
+            candleRef.current = {
+              ...cur,
+              close: v,
+              high: Math.max(cur.high, v),
+              low: Math.min(cur.low, v),
+            };
+          } else {
+            candleRef.current = { time: bucket, open: v, close: v, high: v, low: v };
+          }
+          (series as ISeriesApi<"Candlestick">).update(candleRef.current);
         } else {
-          candleRef.current = { time: bucket, open: v, close: v, high: v, low: v };
+          (series as ISeriesApi<"Line">).update({ time: sec as UTCTimestamp, value: v });
         }
-        (series as ISeriesApi<"Candlestick">).update(candleRef.current);
-      } else {
-        (series as ISeriesApi<"Line">).update({ time: sec as UTCTimestamp, value: v });
+        lastTsRef.current = sec;
       }
-      lastTsRef.current = sec;
     }
+    nowLineRef.current?.setTime(lastTsRef.current as UTCTimestamp | null);
   }, [spotSeries, settings.chartType, historyKey]);
 
   // zero-gamma line data (same incremental pattern)
@@ -367,13 +318,15 @@ export function GexChart({
     lastZgTsRef.current = zgSeries.length ? zgSeries[zgSeries.length - 1][0] : null;
   }, [zgSeries, historyKey]);
 
-  // zero-gamma visibility / axis label
+  // zero-gamma visibility / labels
   useEffect(() => {
     zgSeriesRef.current?.applyOptions({
-      visible: settings.zeroGamma,
+      visible: settings.levels.zg.line,
       lastValueVisible: settings.axisLabels,
+      // series title renders at the axis, not mid-line — closest available
+      title: settings.levels.zg.label ? "Zero Gamma" : "",
     });
-  }, [settings.zeroGamma, settings.axisLabels]);
+  }, [settings.levels.zg, settings.axisLabels]);
 
   // level lines: diffed by key, so toggling one never rebuilds the rest
   useEffect(() => {
@@ -390,7 +343,7 @@ export function GexChart({
     for (const d of desired) {
       const existing = map.get(d.key);
       if (existing) {
-        existing.applyOptions({ price: d.price, axisLabelVisible: settings.axisLabels });
+        existing.applyOptions({ price: d.price, axisLabelVisible: settings.axisLabels, title: d.title });
       } else {
         map.set(
           d.key,
@@ -400,25 +353,14 @@ export function GexChart({
             lineWidth: 1,
             lineStyle: d.style,
             axisLabelVisible: settings.axisLabels,
-            title: "",
+            title: d.title,
           }),
         );
       }
     }
-  }, [
-    state,
-    oi,
-    settings.chartType, // series recreated → lines must be recreated on it
-    settings.majorLongGamma,
-    settings.majorShortGamma,
-    settings.majorPosVol,
-    settings.majorNegVol,
-    settings.majorPosOI,
-    settings.majorNegOI,
-    settings.axisLabels,
-  ]);
+  }, [state, oi, settings.chartType, settings.levels, settings.axisLabels]);
 
-  // profile bars
+  // profile bars + priors dots
   useEffect(() => {
     const primitive = primitiveRef.current;
     if (!primitive) return;
@@ -428,6 +370,12 @@ export function GexChart({
         rows: state.strikes.map(r => [r[0], r[1]] as [number, number]),
         pos: GEXBOT.state.longGamma,
         neg: GEXBOT.state.shortGamma,
+        priors: settings.priors
+          ? {
+              rows: state.strikes.map(r => [r[0], r[3]] as [number, number[]]),
+              colors: GEXBOT.state.priors,
+            }
+          : undefined,
       });
     if (settings.volBars && oi)
       sets.push({
@@ -441,8 +389,43 @@ export function GexChart({
         pos: GEXBOT.classic.posGexOI,
         neg: GEXBOT.classic.negGexOI,
       });
+    // classic priors (blue ramp) ride on the first enabled classic set —
+    // the API's priors are volume-based
+    if (settings.priors && oi) {
+      const classicSet = sets.find(s => s.pos !== GEXBOT.state.longGamma);
+      if (classicSet) {
+        classicSet.priors = {
+          rows: oi.strikes.map(r => [r[0], r[3]] as [number, number[]]),
+          colors: GEXBOT.classic.priors,
+        };
+      }
+    }
+    if (sets.length) sets[0].topScale = true;
     primitive.setData(sets);
-  }, [state, oi, settings.chartType, settings.stateBars, settings.volBars, settings.oiBars]);
+  }, [
+    state,
+    oi,
+    settings.chartType,
+    settings.stateBars,
+    settings.volBars,
+    settings.oiBars,
+    settings.priors,
+  ]);
+
+  // ---- toolbar actions ----
+  const fit = () => chartRef.current?.timeScale().fitContent();
+  const fullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void wrapperRef.current?.requestFullscreen();
+  };
+  const screenshot = () => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const a = document.createElement("a");
+    a.href = chart.takeScreenshot().toDataURL("image/png");
+    a.download = `gex-${label}-${new Date().toISOString().slice(0, 19).replaceAll(":", "-")}.png`;
+    a.click();
+  };
 
   // ---- legend/status ----
   const latest = [state, oi].filter(Boolean).sort((a, b) => b!.providerTs - a!.providerTs)[0];
@@ -469,8 +452,11 @@ export function GexChart({
   const open = spotSeries.length ? spotSeries[0][1] : undefined;
   const delta = spot !== undefined && open ? spot - open : undefined;
 
+  const toolButton =
+    "pointer-events-auto flex size-6 cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-foreground";
+
   return (
-    <div className="relative min-h-0 flex-1">
+    <div ref={wrapperRef} className="relative min-h-0 flex-1 bg-background">
       <div ref={containerRef} className="absolute inset-0" />
       <div
         className="pointer-events-none absolute top-2 left-2 z-10 flex items-center gap-2.5 font-mono text-[11px]"
@@ -504,12 +490,32 @@ export function GexChart({
             {status}
           </span>
         </span>
-        <button
-          onClick={() => chartRef.current?.timeScale().fitContent()}
-          className="pointer-events-auto cursor-pointer rounded bg-black/70 px-2 py-0.5 backdrop-blur-sm hover:text-white"
-        >
-          fit
-        </button>
+      </div>
+      <div className="pointer-events-none absolute top-2 right-14 z-10 flex items-center gap-0.5 rounded bg-black/70 px-1 py-0.5 backdrop-blur-sm">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button onClick={fit} className={toolButton}>
+              <Maximize className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Fit all data</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button onClick={fullscreen} className={toolButton}>
+              <Expand className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Fullscreen</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button onClick={screenshot} className={toolButton}>
+              <Camera className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Save chart as PNG</TooltipContent>
+        </Tooltip>
       </div>
       {!state && !oi && (
         <div
