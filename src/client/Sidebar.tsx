@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import { Bell, ChevronDown, Play, Type } from "lucide-react";
 import {
   Sidebar as SidebarRoot,
@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Input } from "./components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { ensureAudio, playSound } from "./alerts/sounds";
+import { useUiStore } from "./stores/uiStore";
 import {
   GEXBOT,
   LEVEL_KEYS,
@@ -68,6 +69,7 @@ function Section(props: { title: string; color: string; children: ReactNode }) {
 
 function MiniToggle(props: {
   on: boolean;
+  disabled?: boolean;
   onToggle: () => void;
   tip: string;
   probe: string;
@@ -78,10 +80,15 @@ function MiniToggle(props: {
       <TooltipTrigger asChild>
         <button
           data-probe={props.probe}
+          disabled={props.disabled}
           onClick={props.onToggle}
           className={cn(
-            "flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
-            props.on ? "text-primary" : "text-muted-foreground/40 hover:text-muted-foreground",
+            "flex size-5 items-center justify-center rounded transition-colors",
+            props.disabled
+              ? "cursor-not-allowed text-muted-foreground/20"
+              : props.on
+                ? "cursor-pointer text-primary"
+                : "cursor-pointer text-muted-foreground/40 hover:text-muted-foreground",
           )}
         >
           {props.children}
@@ -111,9 +118,10 @@ function LevelRow(props: {
         style={{ background: meta.color }}
       />
       <MiniToggle
-        on={props.cfg.label}
+        on={props.cfg.label && props.cfg.line}
+        disabled={!props.cfg.line}
         onToggle={() => props.onChange({ label: !props.cfg.label })}
-        tip="Show name tag on the chart line"
+        tip={props.cfg.line ? "Show name tag on the chart line" : "Enable the line to show its tag"}
         probe="label"
       >
         <Type className="size-3.5" />
@@ -170,7 +178,8 @@ interface Props {
 }
 
 export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
-  const [scope, setScope] = useState<TickerKey>("NDX");
+  const scope = useUiStore(u => u.scope);
+  const setScope = useUiStore(u => u.setScope);
   const ts = settings.tickers[scope];
 
   const set = (patch: Partial<LayerSettings>) => onChange({ ...settings, ...patch });
@@ -263,7 +272,9 @@ export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
         </Section>
 
         <Section title="chart" color={C.zeroGamma}>
-          <Row label="Priors (1–30m dots)" color={C.priors[2]} on={ts.priors} onChange={v => setTicker({ priors: v })} />
+          {(ts.stateBars || ts.volBars || ts.oiBars) && (
+            <Row label="Priors (1–30m dots)" color={C.priors[2]} on={ts.priors} onChange={v => setTicker({ priors: v })} />
+          )}
           <Row label="Price Axis Labels" on={ts.axisLabels} onChange={v => setTicker({ axisLabels: v })} />
         </Section>
 
@@ -296,6 +307,7 @@ export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
                   </TabsList>
                 </Tabs>
               </Field>
+              {settings.alerts.mode !== "cross" && (
               <Field label="distance">
                 <Input
                   type="number"
@@ -318,6 +330,7 @@ export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
                   </TabsList>
                 </Tabs>
               </Field>
+              )}
               <Field label="cooldown">
                 <Input
                   type="number"
@@ -360,6 +373,7 @@ export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
                     <TabsTrigger value="blip">blip</TabsTrigger>
                   </TabsList>
                 </Tabs>
+                {settings.alerts.sound !== "off" && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
@@ -374,6 +388,7 @@ export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
                   </TooltipTrigger>
                   <TooltipContent>Preview sound</TooltipContent>
                 </Tooltip>
+                )}
               </Field>
               <div className="px-1.5 py-0.5 text-[11px] text-muted-foreground/70">
                 notifications: {permission}

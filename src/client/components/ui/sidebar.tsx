@@ -1,7 +1,7 @@
 /**
  * Trimmed vendor of the official shadcn sidebar (desktop-only):
  * - mobile Sheet branch and SidebarMenu* family removed
- * - cookie persistence swapped for localStorage
+ * - controlled via `open`/`onOpenChange` (state lives in the app's uiStore)
  * Public component names, props, and data-slot/data-state attributes are kept
  * verbatim so future shadcn snippets (and scripts/ui-probe.ts) stay compatible.
  */
@@ -10,7 +10,6 @@ import { PanelRight } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "./button";
 
-const SIDEBAR_STORAGE_KEY = "gex-cockpit-ui-v1";
 const SIDEBAR_WIDTH = "20rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
@@ -31,29 +30,27 @@ function useSidebar(): SidebarContextValue {
 
 function SidebarProvider({
   defaultOpen = true,
+  open: openProp,
+  onOpenChange,
   className,
   style,
   children,
   ...props
-}: React.ComponentProps<"div"> & { defaultOpen?: boolean }) {
-  const [open, _setOpen] = useState<boolean>(() => {
-    try {
-      const raw = localStorage.getItem(SIDEBAR_STORAGE_KEY);
-      if (raw) return JSON.parse(raw).open !== false;
-    } catch {
-      /* default */
-    }
-    return defaultOpen;
-  });
+}: React.ComponentProps<"div"> & {
+  defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [openState, _setOpen] = useState<boolean>(defaultOpen);
+  const open = openProp ?? openState;
 
-  const setOpen = useCallback((value: boolean) => {
-    _setOpen(value);
-    try {
-      localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify({ open: value }));
-    } catch {
-      /* non-fatal */
-    }
-  }, []);
+  const setOpen = useCallback(
+    (value: boolean) => {
+      if (onOpenChange) onOpenChange(value);
+      else _setOpen(value);
+    },
+    [onOpenChange],
+  );
 
   const toggleSidebar = useCallback(() => setOpen(!open), [open, setOpen]);
 

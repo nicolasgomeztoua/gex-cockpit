@@ -1,12 +1,13 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { useStream } from "./useStream";
 import { GexChart } from "./GexChart";
 import { Sidebar } from "./Sidebar";
 import { SidebarProvider, SidebarTrigger, useSidebar } from "./components/ui/sidebar";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useLevelAlerts } from "./alerts/useLevelAlerts";
-import { useSettings } from "./useSettings";
+import { hydrateSettings, useSettingsStore } from "./stores/settingsStore";
+import { startStream, useStreamStore } from "./stores/streamStore";
+import { useUiStore } from "./stores/uiStore";
 import type { FeedSnapshot, StrikeRow } from "../shared/types";
 
 /** Rescale a snapshot's price fields (spot/strikes/majors) by `r`. */
@@ -39,8 +40,15 @@ function CollapsedTrigger() {
 }
 
 function App() {
-  const s = useStream();
-  const [settings, setSettings] = useSettings();
+  const s = useStreamStore();
+  const settings = useSettingsStore(st => st.settings);
+  const setSettings = useSettingsStore(st => st.setSettings);
+  const sidebarOpen = useUiStore(u => u.sidebarOpen);
+  const setSidebarOpen = useUiStore(u => u.setSidebarOpen);
+  useEffect(() => {
+    startStream();
+    hydrateSettings();
+  }, []);
 
   const nqAvailable = !!s.feeds["NQ_NDX:state"];
   const useNq = settings.unit === "nq" && nqAvailable;
@@ -96,7 +104,7 @@ function App() {
 
   return (
     <TooltipProvider>
-      <SidebarProvider>
+      <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <main className="relative flex min-w-0 flex-1 flex-col">
           <GexChart
             label="NDX"
