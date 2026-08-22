@@ -51,7 +51,6 @@ export interface LayerSettings {
   majorNegOI: boolean;
   /** show a price-scale pill for every level line (off = pills only for spot/ZG) */
   axisLabels: boolean;
-  sidebarCollapsed: boolean;
 }
 
 export const DEFAULT_SETTINGS: LayerSettings = {
@@ -68,7 +67,6 @@ export const DEFAULT_SETTINGS: LayerSettings = {
   majorPosOI: true,
   majorNegOI: true,
   axisLabels: false,
-  sidebarCollapsed: false,
 };
 
 const KEY = "gex-cockpit-settings-v2";

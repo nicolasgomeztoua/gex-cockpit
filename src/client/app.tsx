@@ -101,10 +101,7 @@ function App() {
       <Sidebar
         settings={settings}
         onChange={setSettings}
-        rows={[
-          { label: "NDX", unitTag: useNq ? "NQ pts" : undefined, state: ndxState, oi: ndxOi, spotSeries: ndxSeries },
-          { label: "QQQ", unitTag: useNq ? "≈ NQ pts" : undefined, state: qqqState, oi: qqqOi, spotSeries: qqqSeries },
-        ]}
+        feeds={s.feeds}
         connected={s.connected}
         mock={s.mock}
       />
