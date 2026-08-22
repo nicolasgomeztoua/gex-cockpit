@@ -1,4 +1,4 @@
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { Bell, ChevronDown, Play, Type } from "lucide-react";
 import {
   Sidebar as SidebarRoot,
@@ -23,6 +23,8 @@ import {
   type LayerSettings,
   type LevelConfig,
   type LevelKey,
+  type TickerKey,
+  type TickerSettings,
 } from "./theme";
 import type { FeedKey, FeedSnapshot } from "../shared/types";
 import { cn } from "./lib/utils";
@@ -168,14 +170,19 @@ interface Props {
 }
 
 export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
+  const [scope, setScope] = useState<TickerKey>("NDX");
+  const ts = settings.tickers[scope];
+
   const set = (patch: Partial<LayerSettings>) => onChange({ ...settings, ...patch });
   const setAlerts = (patch: Partial<LayerSettings["alerts"]>) =>
     onChange({ ...settings, alerts: { ...settings.alerts, ...patch } });
-  const setLevel = (key: LevelKey, patch: Partial<LevelConfig>) =>
+  const setTicker = (patch: Partial<TickerSettings>) =>
     onChange({
       ...settings,
-      levels: { ...settings.levels, [key]: { ...settings.levels[key], ...patch } },
+      tickers: { ...settings.tickers, [scope]: { ...ts, ...patch } },
     });
+  const setLevel = (key: LevelKey, patch: Partial<LevelConfig>) =>
+    setTicker({ levels: { ...ts.levels, [key]: { ...ts.levels[key], ...patch } } });
 
   const permission = useSyncExternalStore(subscribeNoop, notifPermission, notifPermission);
   const S = GEXBOT.state;
@@ -206,9 +213,16 @@ export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
             <TabsTrigger value="nq">nq future</TabsTrigger>
           </TabsList>
         </Tabs>
+        {/* which ticker the layer sections below configure */}
+        <Tabs value={scope} onValueChange={v => setScope(v as TickerKey)}>
+          <TabsList className="w-full" data-probe="scope">
+            <TabsTrigger value="NDX">NDX</TabsTrigger>
+            <TabsTrigger value="QQQ">QQQ</TabsTrigger>
+          </TabsList>
+        </Tabs>
         <Tabs
-          value={settings.chartType}
-          onValueChange={v => set({ chartType: v as LayerSettings["chartType"] })}
+          value={ts.chartType}
+          onValueChange={v => setTicker({ chartType: v as TickerSettings["chartType"] })}
         >
           <TabsList className="w-full">
             <TabsTrigger value="line">Line</TabsTrigger>
@@ -220,37 +234,37 @@ export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
       <SidebarContent>
         <Section title="state" color={S.longGamma}>
           {stateKeys.map(k => (
-            <LevelRow key={k} levelKey={k} cfg={settings.levels[k]} onChange={p => setLevel(k, p)} />
+            <LevelRow key={k} levelKey={k} cfg={ts.levels[k]} onChange={p => setLevel(k, p)} />
           ))}
           <Row
             label="State Gamma (bars)"
             color={S.shortGamma}
-            on={settings.stateBars}
-            onChange={v => set({ stateBars: v })}
+            on={ts.stateBars}
+            onChange={v => setTicker({ stateBars: v })}
           />
         </Section>
 
         <Section title="classic" color={C.majorPosVol}>
           {classicKeys.map(k => (
-            <LevelRow key={k} levelKey={k} cfg={settings.levels[k]} onChange={p => setLevel(k, p)} />
+            <LevelRow key={k} levelKey={k} cfg={ts.levels[k]} onChange={p => setLevel(k, p)} />
           ))}
           <Row
             label="GEX by Volume (bars)"
             color={C.posGexVol}
-            on={settings.volBars}
-            onChange={v => set({ volBars: v })}
+            on={ts.volBars}
+            onChange={v => setTicker({ volBars: v })}
           />
           <Row
             label="GEX by OI (bars)"
             color={C.posGexOI}
-            on={settings.oiBars}
-            onChange={v => set({ oiBars: v })}
+            on={ts.oiBars}
+            onChange={v => setTicker({ oiBars: v })}
           />
         </Section>
 
         <Section title="chart" color={C.zeroGamma}>
-          <Row label="Priors (1–30m dots)" color={C.priors[2]} on={settings.priors} onChange={v => set({ priors: v })} />
-          <Row label="Price Axis Labels" on={settings.axisLabels} onChange={v => set({ axisLabels: v })} />
+          <Row label="Priors (1–30m dots)" color={C.priors[2]} on={ts.priors} onChange={v => setTicker({ priors: v })} />
+          <Row label="Price Axis Labels" on={ts.axisLabels} onChange={v => setTicker({ axisLabels: v })} />
         </Section>
 
         <Section title="alerts" color={GEXBOT.accentBlue}>
@@ -317,6 +331,22 @@ export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
                 />
                 <span className="text-[12px] text-muted-foreground">min</span>
               </Field>
+              <Field label="notify">
+                <Tabs
+                  className="flex-1"
+                  value={settings.alerts.notify}
+                  onValueChange={v => setAlerts({ notify: v as LayerSettings["alerts"]["notify"] })}
+                >
+                  <TabsList className="w-full">
+                    <TabsTrigger value="once">once</TabsTrigger>
+                    <TabsTrigger value="repeat3">3×</TabsTrigger>
+                    <TabsTrigger value="untilFocus">focus</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </Field>
+              <div className="px-1.5 py-0.5 text-[11px] text-muted-foreground/50">
+                3× repeats like TradingView; focus renotifies until this window is refocused
+              </div>
               <Field label="sound">
                 <Tabs
                   className="flex-1"
@@ -350,7 +380,7 @@ export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
                 {permission === "denied" && " — enable in browser settings"}
               </div>
               <div className="px-1.5 py-0.5 text-[11px] text-muted-foreground/50">
-                pick levels with the <Bell className="inline size-3" /> icon on each row
+                pick levels per ticker with the <Bell className="inline size-3" /> icon on each row
               </div>
             </>
           )}

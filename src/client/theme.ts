@@ -64,7 +64,9 @@ export const LEVEL_META: Record<
 export const LEVEL_KEYS = Object.keys(LEVEL_META) as LevelKey[];
 
 // ---------------------------------------------------------------------------
-// Settings (schema v3), persisted in localStorage.
+// Settings (schema v4): per-ticker layer config + global unit/alerts.
+// Source of truth is the server's SQLite (see useSettings.ts); localStorage
+// only mirrors it for instant boot.
 
 export interface LevelConfig {
   /** draw the level on the chart (zg: series visibility) */
@@ -77,6 +79,8 @@ export interface LevelConfig {
 
 export type AlertMode = "approach" | "cross" | "both";
 export type AlertSound = "off" | "ping" | "chime" | "blip";
+/** once = single notification; repeat3 = TV-style ×3; untilFocus = renotify until the window is refocused */
+export type AlertNotify = "once" | "repeat3" | "untilFocus";
 
 export interface AlertSettings {
   enabled: boolean;
@@ -86,11 +90,13 @@ export interface AlertSettings {
   distanceUnit: "points" | "percent";
   cooldownSec: number;
   sound: AlertSound;
+  notify: AlertNotify;
 }
 
-export interface LayerSettings {
+export type TickerKey = "NDX" | "QQQ";
+
+export interface TickerSettings {
   chartType: "candles" | "line";
-  unit: "spot" | "nq";
   stateBars: boolean; // state gamma profile (cyan/purple)
   volBars: boolean; // classic GEX by volume (light green/salmon)
   oiBars: boolean; // classic GEX by OI (dark green/dark red)
@@ -98,14 +104,18 @@ export interface LayerSettings {
   /** show a price-scale pill for every level line (off = pills only for spot/ZG) */
   axisLabels: boolean;
   levels: Record<LevelKey, LevelConfig>;
+}
+
+export interface LayerSettings {
+  unit: "spot" | "nq";
   alerts: AlertSettings;
+  tickers: Record<TickerKey, TickerSettings>;
 }
 
 const defaultLevel = (): LevelConfig => ({ line: true, label: false, alert: false });
 
-export const DEFAULT_SETTINGS: LayerSettings = {
+const defaultTicker = (): TickerSettings => ({
   chartType: "candles",
-  unit: "spot",
   stateBars: true,
   volBars: false,
   oiBars: true,
@@ -120,6 +130,10 @@ export const DEFAULT_SETTINGS: LayerSettings = {
     mpo: defaultLevel(),
     mno: defaultLevel(),
   },
+});
+
+export const DEFAULT_SETTINGS: LayerSettings = {
+  unit: "spot",
   alerts: {
     enabled: false,
     mode: "both",
@@ -127,14 +141,13 @@ export const DEFAULT_SETTINGS: LayerSettings = {
     distanceUnit: "points",
     cooldownSec: 300,
     sound: "ping",
+    notify: "once",
   },
+  tickers: { NDX: defaultTicker(), QQQ: defaultTicker() },
 };
 
-const KEY = "gex-cockpit-settings-v3";
-const V2_KEY = "gex-cockpit-settings-v2";
-
 /** Copy `src` over `dst` leaf-by-leaf, keeping only values whose type matches. */
-function deepMerge<T extends Record<string, any>>(dst: T, src: unknown): void {
+export function deepMerge<T extends Record<string, any>>(dst: T, src: unknown): void {
   if (typeof src !== "object" || src === null) return;
   for (const k of Object.keys(dst)) {
     const d = dst[k];
@@ -147,47 +160,21 @@ function deepMerge<T extends Record<string, any>>(dst: T, src: unknown): void {
   }
 }
 
-/** One-shot migration of the flat v2 schema into v3. */
-function migrateV2(out: LayerSettings, v2: Record<string, unknown>): void {
-  deepMerge(out, v2); // carries chartType/unit/bars/axisLabels
-  const map: Record<string, LevelKey> = {
-    majorLongGamma: "mlg",
-    majorShortGamma: "msg",
-    zeroGamma: "zg",
-    majorPosVol: "mpv",
-    majorNegVol: "mnv",
-    majorPosOI: "mpo",
-    majorNegOI: "mno",
-  };
-  for (const [oldKey, levelKey] of Object.entries(map)) {
-    if (typeof v2[oldKey] === "boolean") out.levels[levelKey].line = v2[oldKey] as boolean;
-  }
-}
-
-export function loadSettings(): LayerSettings {
+/** Merge an unknown payload over defaults, tolerating old/partial shapes. */
+export function settingsFromUnknown(raw: unknown): LayerSettings {
   const out = structuredClone(DEFAULT_SETTINGS);
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      deepMerge(out, JSON.parse(raw));
-    } else {
-      const v2raw = localStorage.getItem(V2_KEY);
-      if (v2raw) {
-        migrateV2(out, JSON.parse(v2raw) as Record<string, unknown>);
-        localStorage.removeItem(V2_KEY);
-        saveSettings(out);
-      }
-    }
-  } catch {
-    /* corrupted storage — defaults win */
-  }
+  deepMerge(out, raw);
   return out;
 }
 
-export function saveSettings(s: LayerSettings): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(s));
-  } catch {
-    /* storage unavailable — settings just won't persist */
+/** One-shot migration of the single-scope v3 schema into per-ticker v4. */
+export function migrateV3(v3: Record<string, unknown>): LayerSettings {
+  const out = structuredClone(DEFAULT_SETTINGS);
+  if (typeof v3.unit === "string") deepMerge(out, { unit: v3.unit });
+  deepMerge(out.alerts, v3.alerts);
+  for (const t of ["NDX", "QQQ"] as TickerKey[]) {
+    deepMerge(out.tickers[t], v3); // chartType/bars/priors/axisLabels
+    deepMerge(out.tickers[t].levels, v3.levels);
   }
+  return out;
 }

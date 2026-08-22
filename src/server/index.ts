@@ -1,6 +1,6 @@
 import index from "../client/index.html";
 import { MOCK, mockSpotHistory, mockZgHistory, snapshots, startPoller, subscribe } from "./poller";
-import { spotHistory, zgHistory } from "./db";
+import { loadClientSettings, saveClientSettings, spotHistory, zgHistory } from "./db";
 import type { InitPayload } from "../shared/types";
 
 const PORT = Number(process.env.PORT ?? 4321);
@@ -85,6 +85,19 @@ const server = Bun.serve({
         };
       }
       return Response.json(out);
+    },
+    "/api/settings": {
+      GET: () => Response.json({ settings: loadClientSettings() }),
+      PUT: async req => {
+        const body = await req.text();
+        try {
+          JSON.parse(body); // reject non-JSON before persisting
+        } catch {
+          return Response.json({ error: "invalid JSON" }, { status: 400 });
+        }
+        saveClientSettings(body);
+        return Response.json({ ok: true });
+      },
     },
     "/api/health": () => Response.json({ status: "ok", feeds: snapshots().length }),
   },

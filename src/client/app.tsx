@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { useStream } from "./useStream";
 import { GexChart } from "./GexChart";
@@ -6,7 +6,7 @@ import { Sidebar } from "./Sidebar";
 import { SidebarProvider, SidebarTrigger, useSidebar } from "./components/ui/sidebar";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useLevelAlerts } from "./alerts/useLevelAlerts";
-import { loadSettings, saveSettings, type LayerSettings } from "./theme";
+import { useSettings } from "./useSettings";
 import type { FeedSnapshot, StrikeRow } from "../shared/types";
 
 /** Rescale a snapshot's price fields (spot/strikes/majors) by `r`. */
@@ -40,8 +40,7 @@ function CollapsedTrigger() {
 
 function App() {
   const s = useStream();
-  const [settings, setSettings] = useState<LayerSettings>(loadSettings);
-  useEffect(() => saveSettings(settings), [settings]);
+  const [settings, setSettings] = useSettings();
 
   const nqAvailable = !!s.feeds["NQ_NDX:state"];
   const useNq = settings.unit === "nq" && nqAvailable;
@@ -89,8 +88,8 @@ function App() {
   // alerts run on the same displayed-unit data the charts show
   useLevelAlerts(
     [
-      { label: "NDX", state: ndxState, oi: ndxOi },
-      { label: "QQQ", state: qqqState, oi: qqqOi },
+      { label: "NDX", ticker: "NDX", state: ndxState, oi: ndxOi },
+      { label: "QQQ", ticker: "QQQ", state: qqqState, oi: qqqOi },
     ],
     settings,
   );
@@ -107,7 +106,7 @@ function App() {
             oi={ndxOi}
             spotSeries={ndxSeries}
             zgSeries={ndxZg}
-            settings={settings}
+            settings={settings.tickers.NDX}
           />
           <div className="h-px shrink-0 bg-border" />
           <GexChart
@@ -118,7 +117,7 @@ function App() {
             oi={qqqOi}
             spotSeries={qqqSeries}
             zgSeries={qqqZg}
-            settings={settings}
+            settings={settings.tickers.QQQ}
           />
           <CollapsedTrigger />
         </main>

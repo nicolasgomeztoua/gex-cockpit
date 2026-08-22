@@ -12,7 +12,7 @@ import puppeteer from "puppeteer-core";
 const arg = process.argv[2] ?? "Major Short Gamma";
 const control = (process.argv[3] ?? "line") as "line" | "label" | "alert";
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const SETTINGS_KEY = "gex-cockpit-settings-v3";
+const SETTINGS_KEY = "gex-cockpit-settings-v4"; // localStorage mirror; source of truth is /api/settings
 
 /** Flatten to "levels.msg.line"-style paths for diffing. */
 function flatten(obj: unknown, prefix = "", out: Record<string, unknown> = {}) {
@@ -37,7 +37,8 @@ try {
   await page.goto("http://127.0.0.1:4321/", { waitUntil: "networkidle2", timeout: 20_000 }).catch(() => {});
   await new Promise(r => setTimeout(r, 6000)); // let SSE + charts settle
 
-  const readSettings = () => page.evaluate(k => localStorage.getItem(k) ?? "{}", SETTINGS_KEY);
+  const readSettings = () =>
+    page.evaluate(() => fetch("/api/settings").then(r => r.json()).then(j => JSON.stringify(j.settings ?? {})));
 
   // expand the sidebar if it starts collapsed
   await page.evaluate(() => {
@@ -50,14 +51,17 @@ try {
 
   if (arg === "--alert-smoke") {
     // enable alerts with a huge approach distance so the next tick fires
-    await page.evaluate(k => {
-      const s = JSON.parse(localStorage.getItem(k) ?? "{}");
-      s.alerts = { enabled: true, mode: "both", distance: 10000, distanceUnit: "points", cooldownSec: 300, sound: "off" };
-      s.levels = Object.fromEntries(
+    await page.evaluate(async () => {
+      const j = await fetch("/api/settings").then(r => r.json());
+      const s = j.settings ?? {};
+      s.alerts = { enabled: true, mode: "both", distance: 10000, distanceUnit: "points", cooldownSec: 300, sound: "off", notify: "once" };
+      const levels = Object.fromEntries(
         ["mlg", "msg", "zg", "mpv", "mnv", "mpo", "mno"].map(l => [l, { line: true, label: false, alert: true }]),
       );
-      localStorage.setItem(k, JSON.stringify(s));
-    }, SETTINGS_KEY);
+      s.tickers = { NDX: { ...(s.tickers?.NDX ?? {}), levels }, QQQ: { ...(s.tickers?.QQQ ?? {}), levels } };
+      await fetch("/api/settings", { method: "PUT", body: JSON.stringify(s) });
+      localStorage.removeItem("gex-cockpit-settings-v4");
+    });
     await page.reload({ waitUntil: "networkidle2", timeout: 20_000 }).catch(() => {});
     await new Promise(r => setTimeout(r, 12_000)); // needs two ticks (first is suppressed)
     const result = await page.evaluate(() => ({

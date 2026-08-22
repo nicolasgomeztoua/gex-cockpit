@@ -18,6 +18,11 @@ db.exec(`
     spot   REAL    NOT NULL,
     PRIMARY KEY (ticker, ts)
   );
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT    PRIMARY KEY,
+    value      TEXT    NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `);
 
 const insertSnapshotStmt = db.prepare(
@@ -53,4 +58,25 @@ export function zgHistory(ticker: Ticker): [number, number][] {
   const sinceSec = Math.floor(Date.now() / 1000) - 24 * 3600;
   const rows = zgHistoryStmt.all(`${ticker}:oi`, sinceSec) as { ts: number; zg: number }[];
   return rows.map(r => [r.ts, r.zg]);
+}
+
+const getSettingsStmt = db.prepare(`SELECT value FROM app_settings WHERE key = 'client'`);
+const putSettingsStmt = db.prepare(
+  `INSERT INTO app_settings (key, value, updated_at) VALUES ('client', ?, ?)
+   ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+);
+
+/** Stored client settings JSON, or null if none saved yet. */
+export function loadClientSettings(): unknown {
+  const row = getSettingsStmt.get() as { value: string } | null;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value);
+  } catch {
+    return null;
+  }
+}
+
+export function saveClientSettings(json: string): void {
+  putSettingsStmt.run(json, Date.now());
 }

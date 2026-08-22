@@ -14,7 +14,7 @@ import {
 import { Camera, Expand, Maximize } from "lucide-react";
 import { GexProfilePrimitive, VerticalNowLinePrimitive, type BarSet } from "./chart/primitives";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
-import { GEXBOT, LEVEL_META, type LayerSettings, type LevelKey } from "./theme";
+import { GEXBOT, LEVEL_META, type LevelKey, type TickerSettings } from "./theme";
 import type { FeedSnapshot } from "../shared/types";
 
 const fmtPrice = (v: number) =>
@@ -72,7 +72,7 @@ const LEVEL_STYLE: Record<Exclude<LevelKey, "zg">, LineStyle> = {
 function levelLines(
   state: FeedSnapshot | undefined,
   oi: FeedSnapshot | undefined,
-  s: LayerSettings,
+  s: TickerSettings,
 ): Level[] {
   const src: Record<Exclude<LevelKey, "zg">, number | undefined> = {
     mlg: state?.majors.posVol,
@@ -106,7 +106,7 @@ interface Props {
   oi?: FeedSnapshot;
   spotSeries: [number, number][];
   zgSeries: [number, number][];
-  settings: LayerSettings;
+  settings: TickerSettings;
 }
 
 export function GexChart({
