@@ -13,7 +13,11 @@ import type {
 } from "lightweight-charts";
 import { GEXBOT } from "../theme";
 
+/** which profile a bar set / level line belongs to */
+export type ProfileId = "state" | "vol" | "oi";
+
 export interface BarSet {
+  id: ProfileId;
   rows: [number, number][]; // [strike, value]
   pos: string;
   neg: string;
@@ -23,12 +27,65 @@ export interface BarSet {
   topScale?: boolean;
 }
 
+/** the API's five prior snapshots, oldest last — matches the prior color ramps */
+export const PRIOR_LOOKBACKS = ["1m", "5m", "10m", "15m", "30m"] as const;
+
 const fmtCompact = (v: number) => {
   const a = Math.abs(v);
   if (a >= 1_000_000) return (v / 1_000_000).toFixed(1) + "M";
   if (a >= 1_000) return (v / 1_000).toFixed(1) + "k";
   return a >= 100 ? v.toFixed(0) : v.toFixed(1);
 };
+
+/** per-set scale shared by draw and hit-testing: max |value| + median strike gap */
+function setGeom(set: BarSet): { maxAbs: number; gap: number } | null {
+  if (!set.rows.length) return null;
+  const maxAbs = Math.max(...set.rows.map(r => Math.abs(r[1])));
+  if (maxAbs <= 0) return null;
+  const gaps: number[] = [];
+  for (let g = 1; g < set.rows.length; g++) gaps.push(set.rows[g][0] - set.rows[g - 1][0]);
+  gaps.sort((a, b) => a - b);
+  return { maxAbs, gap: gaps.length ? gaps[Math.floor(gaps.length / 2)] : 1 };
+}
+
+/** A major level, drawn through the centre of the bar it belongs to. */
+export interface LevelLine {
+  key: string;
+  price: number;
+  color: string;
+  label: string | null;
+  anchor: ProfileId;
+}
+
+/** anchor set index, falling back between the two classic profiles */
+function anchorIndex(sets: BarSet[], anchor: ProfileId): number {
+  const i = sets.findIndex(s => s.id === anchor);
+  if (i >= 0) return i;
+  if (anchor === "vol") return sets.findIndex(s => s.id === "oi");
+  if (anchor === "oi") return sets.findIndex(s => s.id === "vol");
+  return -1;
+}
+
+/** cursor-to-dot tolerance for prior-dot hit testing (px) */
+const DOT_HIT = 5;
+
+/** index of the largest |prior| in a row, first occurrence on ties (-1 if all zero) */
+function maxPriorIndex(values: number[]): number {
+  let best = -1;
+  let bestAbs = 0;
+  for (let j = 0; j < values.length; j++) {
+    const a = Math.abs(values[j]);
+    if (a > bestAbs) {
+      bestAbs = a;
+      best = j;
+    }
+  }
+  return best;
+}
+
+/** bar length in px for a value, clamped to the profile's max width */
+const barLen = (value: number, maxAbs: number, maxWidth: number) =>
+  Math.min((Math.abs(value) / maxAbs) * maxWidth, maxWidth);
 
 /**
  * GEX profile: horizontal bars anchored to the right edge at their strike
@@ -39,7 +96,10 @@ const fmtCompact = (v: number) => {
 export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
   private _param: SeriesAttachedParameter<Time> | null = null;
   private _sets: BarSet[] = [];
+  private _levels: LevelLine[] = [];
+  private _levelKey = "";
   private _hover: { price: number; x: number } | null = null;
+  private _paneW = 0; // last drawn pane width, so hit-tests match the drawn geometry
   private _view: IPrimitivePaneView;
 
   constructor() {
@@ -49,21 +109,19 @@ export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
       renderer: (): IPrimitivePaneRenderer => ({
         draw: target => {
           const param = self._param;
-          if (!param || !self._sets.length) return;
+          if (!param || (!self._sets.length && !self._levels.length)) return;
           const series = param.series;
           target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+            self._paneW = mediaSize.width; // hit-testing runs outside draw
             const maxWidth = mediaSize.width * 0.42;
             const nSets = self._sets.length;
+            // sub-bar slot per drawn set, so level lines can centre on their bar
+            const slots: ({ subH: number; stackH: number } | null)[] = Array(nSets).fill(null);
             for (let i = 0; i < nSets; i++) {
               const set = self._sets[i];
-              if (!set.rows.length) continue;
-              const maxAbs = Math.max(...set.rows.map(r => Math.abs(r[1])));
-              if (maxAbs <= 0) continue;
-              const gaps: number[] = [];
-              for (let g = 1; g < set.rows.length; g++)
-                gaps.push(set.rows[g][0] - set.rows[g - 1][0]);
-              gaps.sort((a, b) => a - b);
-              const gap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 1;
+              const geom = setGeom(set);
+              if (!geom) continue;
+              const { maxAbs, gap } = geom;
               const k0 = set.rows[Math.floor(set.rows.length / 2)][0];
               const y0 = series.priceToCoordinate(k0);
               const y1 = series.priceToCoordinate(k0 + gap);
@@ -72,6 +130,7 @@ export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
               // capped: QQQ's $1 grid must not produce chunky bars
               const subH = Math.min(6, Math.max(2, (slotH * 0.72) / nSets));
               const stackH = subH * nSets;
+              slots[i] = { subH, stackH };
 
               ctx.globalAlpha = 0.92;
               for (const [strike, value] of set.rows) {
@@ -89,9 +148,8 @@ export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
                 }
               }
 
-              // prior-snapshot dots, only for the bar actually under the cursor
-              // (always-on was visual noise — user feedback). The cursor must be
-              // inside the bar's horizontal extent too, not just anywhere on its row.
+              // prior-snapshot dots, only for the profile row actually under the
+              // cursor (always-on was visual noise — user feedback)
               const hover = self._hover;
               if (set.priors && hover !== null) {
                 const { rows, colors } = set.priors;
@@ -99,18 +157,34 @@ export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
                 ctx.globalAlpha = 0.9;
                 for (const [strike, values] of rows) {
                   if (Math.abs(strike - hover.price) > gap * 0.55) continue;
-                  // 16px floor keeps dot-sized bars hoverable
-                  const barW = (Math.abs(barByStrike.get(strike) ?? 0) / maxAbs) * maxWidth;
-                  if (hover.x < mediaSize.width - Math.max(barW, 16)) continue;
+                  // hit zone = bar ∪ dots: priors can sit past the bar's tip, and
+                  // the cursor must be able to travel out to them without the dots
+                  // vanishing on the way. 16px floor keeps dot-sized bars hoverable.
+                  const barW = barLen(barByStrike.get(strike) ?? 0, maxAbs, maxWidth);
+                  const reach = Math.max(barW, self._priorReach(values, maxAbs, maxWidth), 16);
+                  if (hover.x < mediaSize.width - reach) continue;
                   const y = series.priceToCoordinate(strike);
                   if (y === null || y < -slotH || y > mediaSize.height + slotH) continue;
                   const yMid = y - stackH / 2 + i * subH + subH / 2 - 1;
+                  const jMax = maxPriorIndex(values);
                   for (let j = 0; j < values.length; j++) {
                     const pv = values[j];
                     if (!pv) continue;
-                    const w = Math.min((Math.abs(pv) / maxAbs) * maxWidth, maxWidth);
+                    const x = mediaSize.width - barLen(pv, maxAbs, maxWidth);
                     ctx.fillStyle = colors[Math.min(j, colors.length - 1)];
-                    ctx.fillRect(mediaSize.width - w - 1, yMid, 2, 2);
+                    if (j !== jMax) {
+                      ctx.fillRect(x - 1, yMid, 2, 2);
+                      continue;
+                    }
+                    // the row's largest prior: a touch bigger, with a faint ring
+                    ctx.beginPath();
+                    ctx.arc(x, yMid + 1, 1.75, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(x, yMid + 1, 2.5, 0, Math.PI * 2);
+                    ctx.stroke();
                   }
                 }
               }
@@ -128,6 +202,37 @@ export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
                   ctx.fillText(fmtCompact(v), x, 4);
                 }
               }
+            }
+
+            // major levels: dotted 1px hairlines through the centre of their own
+            // sub-bar, so a level reads against the profile it was computed from
+            if (self._levels.length) {
+              ctx.globalAlpha = 0.9;
+              ctx.lineWidth = 1;
+              ctx.setLineDash([1.5, 3]);
+              ctx.font = "10px 'SF Mono', Menlo, Consolas, monospace";
+              ctx.textAlign = "right";
+              ctx.textBaseline = "alphabetic";
+              for (const lv of self._levels) {
+                const yRaw = series.priceToCoordinate(lv.price);
+                if (yRaw === null) continue;
+                const i = anchorIndex(self._sets, lv.anchor);
+                const slot = i >= 0 ? slots[i] : null;
+                // +0.5 keeps the hairline on a pixel row instead of straddling two
+                const y =
+                  Math.round(slot ? yRaw - slot.stackH / 2 + i * slot.subH + slot.subH / 2 : yRaw) + 0.5;
+                ctx.strokeStyle = lv.color;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(mediaSize.width, y);
+                ctx.stroke();
+                if (lv.label) {
+                  ctx.fillStyle = lv.color;
+                  ctx.fillText(lv.label, mediaSize.width - maxWidth - 8, y - 4);
+                }
+              }
+              ctx.setLineDash([]);
+              ctx.globalAlpha = 1;
             }
           });
         },
@@ -151,6 +256,16 @@ export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
     this._param?.requestUpdate();
   }
 
+  /** major level lines — drawn here rather than as price lines so they can sit
+   * on their own bar's centre and share the profile's slot geometry */
+  setLevels(levels: LevelLine[]): void {
+    const key = levels.map(l => `${l.key}:${l.price}:${l.color}:${l.label ?? ""}:${l.anchor}`).join("|");
+    if (key === this._levelKey) return;
+    this._levelKey = key;
+    this._levels = levels;
+    this._param?.requestUpdate();
+  }
+
   /** crosshair position — controls which bar's prior dots render */
   setHover(hover: { price: number; x: number } | null): void {
     const prev = this._hover;
@@ -158,6 +273,63 @@ export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
       return;
     this._hover = hover;
     this._param?.requestUpdate();
+  }
+
+  /**
+   * How far left the widest prior dot reaches, padded by DOT_HIT so the reveal
+   * zone covers the dot's whole hit radius — anywhere dotAt() reports a dot,
+   * that dot is also drawn.
+   */
+  private _priorReach(values: number[], maxAbs: number, maxWidth: number): number {
+    let reach = 0;
+    for (const pv of values) {
+      if (!pv) continue;
+      const w = barLen(pv, maxAbs, maxWidth) + 1 + DOT_HIT;
+      if (w > reach) reach = w;
+    }
+    return reach;
+  }
+
+  /** pane width used by draw; falls back to the chart before the first paint */
+  private _width(): number {
+    return this._paneW || this._param?.chart.paneSize().width || 0;
+  }
+
+  /**
+   * Prior dot under the cursor, if any — closest hit across sets. Mirrors the
+   * geometry in draw(), so a dot the user can see is a dot they can hover.
+   */
+  dotAt(price: number, x: number): { lookback: string; value: number; color: string; isMax: boolean } | null {
+    const paneW = this._width();
+    if (!paneW) return null;
+    const maxWidth = paneW * 0.42;
+    let best: { lookback: string; value: number; color: string; isMax: boolean } | null = null;
+    let bestDx = DOT_HIT;
+    for (const set of this._sets) {
+      if (!set.priors) continue;
+      const geom = setGeom(set);
+      if (!geom) continue;
+      const { maxAbs, gap } = geom;
+      const { rows, colors } = set.priors;
+      for (const [strike, values] of rows) {
+        if (Math.abs(strike - price) > gap * 0.55) continue;
+        const jMax = maxPriorIndex(values);
+        for (let j = 0; j < values.length; j++) {
+          const pv = values[j];
+          if (!pv) continue;
+          const dx = Math.abs(paneW - barLen(pv, maxAbs, maxWidth) - x);
+          if (dx >= bestDx) continue;
+          bestDx = dx;
+          best = {
+            lookback: PRIOR_LOOKBACKS[j] ?? `#${j + 1}`,
+            value: pv,
+            color: colors[Math.min(j, colors.length - 1)],
+            isMax: j === jMax,
+          };
+        }
+      }
+    }
+    return best;
   }
 }
 

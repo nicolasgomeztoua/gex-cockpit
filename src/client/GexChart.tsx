@@ -12,7 +12,12 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { Camera, Expand, Maximize } from "lucide-react";
-import { GexProfilePrimitive, VerticalNowLinePrimitive, type BarSet } from "./chart/primitives";
+import {
+  GexProfilePrimitive,
+  VerticalNowLinePrimitive,
+  type BarSet,
+  type ProfileId,
+} from "./chart/primitives";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { GEXBOT, LEVEL_META, type LevelKey, type TickerSettings } from "./theme";
 import type { FeedSnapshot, StrikeRow } from "../shared/types";
@@ -71,17 +76,18 @@ interface Level {
   key: LevelKey;
   price: number;
   color: string;
-  style: LineStyle;
-  title: string;
+  label: string | null;
+  anchor: ProfileId;
 }
 
-const LEVEL_STYLE: Record<Exclude<LevelKey, "zg">, LineStyle> = {
-  mlg: LineStyle.Solid,
-  msg: LineStyle.Solid,
-  mpv: LineStyle.Dashed,
-  mnv: LineStyle.Dashed,
-  mpo: LineStyle.Dotted,
-  mno: LineStyle.Dotted,
+/** which profile each major is computed from — the bar its line sits on */
+const LEVEL_ANCHOR: Record<Exclude<LevelKey, "zg">, ProfileId> = {
+  mlg: "state",
+  msg: "state",
+  mpv: "vol",
+  mnv: "vol",
+  mpo: "oi",
+  mno: "oi",
 };
 
 /** All level lines except zero gamma, which is a continuous series. */
@@ -106,8 +112,8 @@ function levelLines(
       key,
       price,
       color: LEVEL_META[key].color,
-      style: LEVEL_STYLE[key],
-      title: s.levels[key].label ? LEVEL_META[key].name : "",
+      label: s.levels[key].label ? LEVEL_META[key].name : null,
+      anchor: LEVEL_ANCHOR[key],
     });
   }
   return out;
@@ -233,6 +239,19 @@ export function GexChart({
       // priors are gated on the bar itself, so the x coordinate matters too
       primitiveRef.current?.setHover(price === null ? null : { price, x: param.point.x });
       if (price === null || !tip) return;
+
+      // a prior dot under the cursor wins over the level line it may overlap —
+      // dots are a right-edge target, level lines span the whole width
+      const dot = primitiveRef.current?.dotAt(price, param.point.x);
+      if (dot) {
+        tip.textContent = `${dot.lookback} prior · GEX ${fmtVal(dot.value)}`;
+        tip.style.borderColor = dot.color;
+        tip.style.color = dot.color;
+        tip.style.display = "block";
+        tip.style.left = `${Math.min(param.point.x + 14, (containerRef.current?.clientWidth ?? 600) - 230)}px`;
+        tip.style.top = `${param.point.y - 26}px`;
+        return;
+      }
 
       const d = hoverDataRef.current;
       const entries: { key: LevelKey; price: number; value: number | null }[] = [];
@@ -417,11 +436,14 @@ export function GexChart({
     });
   }, [settings.levels.zg, settings.axisLabels]);
 
-  // level lines: diffed by key, so toggling one never rebuilds the rest
+  // level lines: the line itself is drawn by the profile primitive (centred on
+  // its own bar); the price lines below survive only as axis-pill carriers,
+  // diffed by key so toggling one never rebuilds the rest
   useEffect(() => {
     const series = mainSeriesRef.current;
     if (!series) return;
     const desired = levelLines(state, oi, settings);
+    primitiveRef.current?.setLevels(desired);
     const map = priceLinesRef.current;
     for (const [key, pl] of [...map]) {
       if (!desired.some(d => d.key === key)) {
@@ -432,7 +454,7 @@ export function GexChart({
     for (const d of desired) {
       const existing = map.get(d.key);
       if (existing) {
-        existing.applyOptions({ price: d.price, axisLabelVisible: settings.axisLabels, title: d.title });
+        existing.applyOptions({ price: d.price, axisLabelVisible: settings.axisLabels });
       } else {
         map.set(
           d.key,
@@ -440,9 +462,9 @@ export function GexChart({
             price: d.price,
             color: d.color,
             lineWidth: 1,
-            lineStyle: d.style,
+            lineVisible: false, // the primitive draws the visible line
             axisLabelVisible: settings.axisLabels,
-            title: d.title,
+            title: "",
           }),
         );
       }
@@ -456,6 +478,7 @@ export function GexChart({
     const sets: BarSet[] = [];
     if (settings.stateBars && state)
       sets.push({
+        id: "state",
         rows: state.strikes.map(r => [r[0], r[1]] as [number, number]),
         pos: GEXBOT.state.longGamma,
         neg: GEXBOT.state.shortGamma,
@@ -468,12 +491,14 @@ export function GexChart({
       });
     if (settings.volBars && oi)
       sets.push({
+        id: "vol",
         rows: oi.strikes.map(r => [r[0], r[1]] as [number, number]),
         pos: GEXBOT.classic.posGexVol,
         neg: GEXBOT.classic.negGexVol,
       });
     if (settings.oiBars && oi)
       sets.push({
+        id: "oi",
         rows: oi.strikes.map(r => [r[0], r[2]] as [number, number]),
         pos: GEXBOT.classic.posGexOI,
         neg: GEXBOT.classic.negGexOI,
