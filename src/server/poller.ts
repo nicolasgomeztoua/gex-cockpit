@@ -1,0 +1,211 @@
+import { fetchFeed } from "./gexbot";
+import { persistSnapshot } from "./db";
+import type { FeedKey, FeedKind, FeedSnapshot, Ticker } from "../shared/types";
+
+const POLL_MS = Number(process.env.POLL_MS ?? 10_000);
+const MAX_BACKOFF_MS = 5 * 60_000;
+/** MOCK=1: replay a synthetic session off one real snapshot — nothing is persisted. */
+export const MOCK = !!process.env.MOCK && process.env.MOCK !== "0";
+
+const FEEDS: { ticker: Ticker; kind: FeedKind }[] = [
+  { ticker: "NDX", kind: "state" },
+  { ticker: "NDX", kind: "oi" },
+  { ticker: "QQQ", kind: "state" },
+  { ticker: "QQQ", kind: "oi" },
+  // NDX in NQ-future price space (native API conversion) — drives the NQ unit toggle
+  { ticker: "NQ_NDX", kind: "state" },
+  { ticker: "NQ_NDX", kind: "oi" },
+];
+
+const TICKERS = [...new Set(FEEDS.map(f => f.ticker))];
+
+type Listener = (s: FeedSnapshot) => void;
+
+const store = new Map<FeedKey, FeedSnapshot>();
+const listeners = new Set<Listener>();
+
+export function subscribe(fn: Listener): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+export function snapshots(): FeedSnapshot[] {
+  return [...store.values()];
+}
+
+function emit(s: FeedSnapshot): void {
+  for (const fn of listeners) fn(s);
+}
+
+async function pollLoop(ticker: Ticker, kind: FeedKind): Promise<void> {
+  const key = `${ticker}:${kind}` as FeedKey;
+  let delay = POLL_MS;
+  while (true) {
+    try {
+      const snap = await fetchFeed(ticker, kind);
+      const prev = store.get(key);
+      // Dedupe on the provider timestamp: only a real data update reaches
+      // the store, the DB, and the UI. Poll ticks with unchanged data are
+      // still used to clear a previous error state.
+      if (!prev || prev.providerTs !== snap.providerTs || prev.status === "error") {
+        store.set(key, snap);
+        if (!MOCK) persistSnapshot(snap);
+        emit(snap);
+      }
+      delay = POLL_MS;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[poller] ${key}: ${msg}`);
+      const prev = store.get(key);
+      if (prev && prev.status !== "error") {
+        // keep last-good data, just flag it
+        const flagged = { ...prev, status: "error" as const, error: msg };
+        store.set(key, flagged);
+        emit(flagged);
+      }
+      delay = Math.min(delay * 2, MAX_BACKOFF_MS);
+    }
+    await Bun.sleep(delay);
+  }
+}
+
+export function startPoller(): void {
+  if (MOCK) {
+    console.log("[poller] MOCK mode — synthetic session, nothing persisted");
+    void startMock();
+    return;
+  }
+  console.log(`[poller] polling every ${POLL_MS}ms (set POLL_MS to change)`);
+  for (const f of FEEDS) void pollLoop(f.ticker, f.kind);
+}
+
+// ---------------------------------------------------------------------------
+// Mock mode: seed from one real snapshot per feed, then random-walk the spot
+// and jitter the profiles so the UI can be exercised while the market is shut.
+
+const mockHistories = new Map<Ticker, [number, number][]>();
+const mockZgHistories = new Map<Ticker, [number, number][]>();
+
+export function mockSpotHistory(ticker: Ticker): [number, number][] {
+  return mockHistories.get(ticker) ?? [];
+}
+
+export function mockZgHistory(ticker: Ticker): [number, number][] {
+  return mockZgHistories.get(ticker) ?? [];
+}
+
+const randn = () => {
+  let u = 0;
+  let v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+};
+
+/** Walk the mock zero gamma forward and record it (classic feeds only). */
+function nextMockZg(ticker: Ticker, kind: FeedKind, nowSec: number): number | null {
+  if (kind !== "oi") return null;
+  const hist = mockZgHistories.get(ticker);
+  if (!hist?.length) return null;
+  const prev = hist[hist.length - 1][1];
+  const zg = prev + prev * 0.00006 * randn();
+  hist.push([nowSec, zg]);
+  return zg;
+}
+
+async function startMock(): Promise<void> {
+  const bases = new Map<FeedKey, FeedSnapshot>();
+  for (const f of FEEDS) {
+    const key = `${f.ticker}:${f.kind}` as FeedKey;
+    try {
+      bases.set(key, await fetchFeed(f.ticker, f.kind));
+    } catch (err) {
+      console.error(`[mock] seed fetch failed for ${key}:`, err);
+      return;
+    }
+  }
+
+  // synthetic 6.5h of 1-minute history ending at the real spot
+  for (const ticker of TICKERS) {
+    const base = bases.get(`${ticker}:state` as FeedKey)!;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const points: [number, number][] = [];
+    let px = base.spot;
+    const steps = 390;
+    const walk: number[] = [px];
+    for (let i = 0; i < steps; i++) {
+      px += px * 0.00045 * randn();
+      walk.push(px);
+    }
+    // shift the walk so it *ends* at the real spot
+    const drift = walk[walk.length - 1] - base.spot;
+    for (let i = 0; i <= steps; i++) {
+      points.push([nowSec - (steps - i) * 60, walk[i] - (drift * i) / steps]);
+    }
+    mockHistories.set(ticker, points);
+
+    // zero gamma drifts slowly around its seed value through the session
+    const zgBase = bases.get(`${ticker}:oi` as FeedKey)!.majors.zeroGamma;
+    if (zgBase) {
+      const zgPoints: [number, number][] = [];
+      let zg = zgBase;
+      for (let i = 0; i <= steps; i++) {
+        zg += zgBase * 0.00006 * randn();
+        zgPoints.push([nowSec - (steps - i) * 60, zg]);
+      }
+      const zgDrift = zg - zgBase;
+      mockZgHistories.set(
+        ticker,
+        zgPoints.map(([t, v], i) => [t, v - (zgDrift * i) / steps] as [number, number]),
+      );
+    }
+  }
+
+  const spots = new Map<Ticker, number>(
+    TICKERS.map(t => [t, bases.get(`${t}:state` as FeedKey)!.spot]),
+  );
+
+  setInterval(() => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const ticker of TICKERS) {
+      const spot = spots.get(ticker)! * (1 + 0.00035 * randn());
+      spots.set(ticker, spot);
+      mockHistories.get(ticker)!.push([nowSec, spot]);
+      for (const kind of ["state", "oi"] as FeedKind[]) {
+        const key = `${ticker}:${kind}` as FeedKey;
+        const base = bases.get(key)!;
+        const strikes: [number, number, number][] = base.strikes.map(([k, v, o]) => [
+          k,
+          v * (1 + 0.06 * randn()),
+          o * (1 + 0.06 * randn()),
+        ]);
+        const near = strikes.filter(([k]) => Math.abs(k - spot) / spot < 0.012 && k !== 0);
+        const wall = (col: 1 | 2, sign: 1 | -1) => {
+          const c = near
+            .filter(s => sign * s[col] > 0)
+            .sort((a, b) => sign * (b[col] - a[col]))[0];
+          return c ? c[0] : 0;
+        };
+        const snap: FeedSnapshot = {
+          ...base,
+          providerTs: nowSec,
+          fetchedAt: Date.now(),
+          spot,
+          strikes,
+          majors: {
+            posVol: wall(1, 1) || base.majors.posVol,
+            negVol: wall(1, -1) || base.majors.negVol,
+            posOI: kind === "oi" ? wall(2, 1) || base.majors.posOI : base.majors.posOI,
+            negOI: kind === "oi" ? wall(2, -1) || base.majors.negOI : base.majors.negOI,
+            zeroGamma: nextMockZg(ticker, kind, nowSec),
+          },
+          netGexVol: strikes.reduce((a, [, v]) => a + v, 0),
+          netGexOI: strikes.reduce((a, [, , o]) => a + o, 0),
+          status: "live",
+        };
+        store.set(key, snap);
+        emit(snap);
+      }
+    }
+  }, 3000);
+}
