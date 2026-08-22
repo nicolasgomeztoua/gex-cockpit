@@ -48,6 +48,11 @@ try {
     }
   });
   await new Promise(r => setTimeout(r, 500));
+  // level rows live in the settings view — open it from the main view
+  await page.evaluate(() => {
+    (document.querySelector('[data-probe="open-settings"]') as HTMLElement | null)?.click();
+  });
+  await new Promise(r => setTimeout(r, 400));
 
   if (arg === "--alert-smoke") {
     // enable alerts with a huge approach distance so the next tick fires

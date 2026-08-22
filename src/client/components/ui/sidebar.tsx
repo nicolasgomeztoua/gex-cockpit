@@ -32,6 +32,7 @@ function SidebarProvider({
   defaultOpen = true,
   open: openProp,
   onOpenChange,
+  width,
   className,
   style,
   children,
@@ -40,6 +41,8 @@ function SidebarProvider({
   defaultOpen?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** sidebar width in px (defaults to the built-in 20rem) */
+  width?: number;
 }) {
   const [openState, _setOpen] = useState<boolean>(defaultOpen);
   const open = openProp ?? openState;
@@ -74,7 +77,7 @@ function SidebarProvider({
     <SidebarContext.Provider value={value}>
       <div
         data-slot="sidebar-wrapper"
-        style={{ "--sidebar-width": SIDEBAR_WIDTH, ...style } as React.CSSProperties}
+        style={{ "--sidebar-width": width ? `${width}px` : SIDEBAR_WIDTH, ...style } as React.CSSProperties}
         className={cn("flex h-full w-full text-sidebar-foreground", className)}
         {...props}
       >

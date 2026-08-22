@@ -45,6 +45,7 @@ function App() {
   const setSettings = useSettingsStore(st => st.setSettings);
   const sidebarOpen = useUiStore(u => u.sidebarOpen);
   const setSidebarOpen = useUiStore(u => u.setSidebarOpen);
+  const sidebarWidth = useUiStore(u => u.sidebarWidth);
   useEffect(() => {
     startStream();
     hydrateSettings();
@@ -104,7 +105,7 @@ function App() {
 
   return (
     <TooltipProvider>
-      <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
+      <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen} width={sidebarWidth}>
         <main className="relative flex min-w-0 flex-1 flex-col">
           <GexChart
             label="NDX"

@@ -39,6 +39,7 @@ const fmtCompact = (v: number) => {
 export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
   private _param: SeriesAttachedParameter<Time> | null = null;
   private _sets: BarSet[] = [];
+  private _hoverPrice: number | null = null;
   private _view: IPrimitivePaneView;
 
   constructor() {
@@ -88,11 +89,14 @@ export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
                 }
               }
 
-              // prior-snapshot dots at their value positions
-              if (set.priors) {
+              // prior-snapshot dots, only for the strike row under the cursor
+              // (always-on was visual noise — user feedback)
+              const hover = self._hoverPrice;
+              if (set.priors && hover !== null) {
                 const { rows, colors } = set.priors;
-                ctx.globalAlpha = 0.85;
+                ctx.globalAlpha = 0.9;
                 for (const [strike, values] of rows) {
+                  if (Math.abs(strike - hover) > gap * 0.55) continue;
                   const y = series.priceToCoordinate(strike);
                   if (y === null || y < -slotH || y > mediaSize.height + slotH) continue;
                   const yMid = y - stackH / 2 + i * subH + subH / 2 - 1;
@@ -139,6 +143,13 @@ export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
 
   setData(sets: BarSet[]): void {
     this._sets = sets;
+    this._param?.requestUpdate();
+  }
+
+  /** crosshair price — controls which strike's prior dots render */
+  setHoverPrice(price: number | null): void {
+    if (price === this._hoverPrice) return;
+    this._hoverPrice = price;
     this._param?.requestUpdate();
   }
 }

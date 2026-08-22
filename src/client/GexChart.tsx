@@ -15,10 +15,26 @@ import { Camera, Expand, Maximize } from "lucide-react";
 import { GexProfilePrimitive, VerticalNowLinePrimitive, type BarSet } from "./chart/primitives";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { GEXBOT, LEVEL_META, type LevelKey, type TickerSettings } from "./theme";
-import type { FeedSnapshot } from "../shared/types";
+import type { FeedSnapshot, StrikeRow } from "../shared/types";
+
+/** value of the strike row nearest to `price` */
+function gexAt(rows: StrikeRow[] | undefined, price: number, col: 1 | 2): number | null {
+  if (!rows?.length) return null;
+  let best: StrikeRow = rows[0];
+  for (const r of rows) if (Math.abs(r[0] - price) < Math.abs(best[0] - price)) best = r;
+  return best[col];
+}
 
 const fmtPrice = (v: number) =>
   Math.abs(v) >= 3000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(2);
+
+/** compact GEX magnitude — raw API units (the vendor doesn't document them) */
+const fmtVal = (v: number) => {
+  const a = Math.abs(v);
+  if (a >= 1_000_000) return (v / 1_000_000).toFixed(1) + "M";
+  if (a >= 1_000) return (v / 1_000).toFixed(1) + "k";
+  return a >= 100 ? v.toFixed(0) : v.toFixed(1);
+};
 
 const fmtET = (sec: number, withSeconds = false) =>
   new Date(sec * 1000).toLocaleTimeString("en-US", {
@@ -130,6 +146,20 @@ export function GexChart({
   const lastTsRef = useRef<number | null>(null);
   const lastZgTsRef = useRef<number | null>(null);
   const candleRef = useRef<CandlestickData<UTCTimestamp> | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  // latest data for the crosshair handler (subscribed once, reads per event)
+  const hoverDataRef = useRef<{
+    state?: FeedSnapshot;
+    oi?: FeedSnapshot;
+    settings: TickerSettings;
+    zgLast: number | null;
+  }>({ settings, zgLast: null });
+  hoverDataRef.current = {
+    state,
+    oi,
+    settings,
+    zgLast: zgSeries.length ? zgSeries[zgSeries.length - 1][1] : null,
+  };
   const [, tick] = useState(0);
 
   useEffect(() => {
@@ -189,6 +219,64 @@ export function GexChart({
       lastValueVisible: true,
       crosshairMarkerVisible: false,
       autoscaleInfoProvider: () => null,
+    });
+    // crosshair: hover-gated prior dots + level tooltip (GEX magnitude at the level)
+    chart.subscribeCrosshairMove(param => {
+      const series = mainSeriesRef.current;
+      const tip = tooltipRef.current;
+      if (!param.point || !series) {
+        primitiveRef.current?.setHoverPrice(null);
+        if (tip) tip.style.display = "none";
+        return;
+      }
+      const price = series.coordinateToPrice(param.point.y);
+      primitiveRef.current?.setHoverPrice(price);
+      if (price === null || !tip) return;
+
+      const d = hoverDataRef.current;
+      const entries: { key: LevelKey; price: number; value: number | null }[] = [];
+      const lv = d.settings.levels;
+      if (d.state) {
+        if (lv.mlg.line && d.state.majors.posVol)
+          entries.push({ key: "mlg", price: d.state.majors.posVol, value: gexAt(d.state.strikes, d.state.majors.posVol, 1) });
+        if (lv.msg.line && d.state.majors.negVol)
+          entries.push({ key: "msg", price: d.state.majors.negVol, value: gexAt(d.state.strikes, d.state.majors.negVol, 1) });
+      }
+      if (d.oi) {
+        if (lv.mpv.line && d.oi.majors.posVol)
+          entries.push({ key: "mpv", price: d.oi.majors.posVol, value: gexAt(d.oi.strikes, d.oi.majors.posVol, 1) });
+        if (lv.mnv.line && d.oi.majors.negVol)
+          entries.push({ key: "mnv", price: d.oi.majors.negVol, value: gexAt(d.oi.strikes, d.oi.majors.negVol, 1) });
+        if (lv.mpo.line && d.oi.majors.posOI)
+          entries.push({ key: "mpo", price: d.oi.majors.posOI, value: gexAt(d.oi.strikes, d.oi.majors.posOI, 2) });
+        if (lv.mno.line && d.oi.majors.negOI)
+          entries.push({ key: "mno", price: d.oi.majors.negOI, value: gexAt(d.oi.strikes, d.oi.majors.negOI, 2) });
+      }
+      if (lv.zg.line && d.zgLast) entries.push({ key: "zg", price: d.zgLast, value: null });
+
+      let best: (typeof entries)[number] | null = null;
+      let bestDy = 9; // px hit zone
+      for (const e of entries) {
+        const py = series.priceToCoordinate(e.price);
+        if (py === null) continue;
+        const dy = Math.abs(py - param.point.y);
+        if (dy < bestDy) {
+          best = e;
+          bestDy = dy;
+        }
+      }
+      if (!best) {
+        tip.style.display = "none";
+        return;
+      }
+      const meta = LEVEL_META[best.key];
+      tip.textContent = `${meta.name} ${fmtPrice(best.price)}${best.value !== null ? ` · GEX ${fmtVal(best.value)}` : ""}`;
+      tip.style.borderColor = meta.color;
+      tip.style.color = meta.color;
+      tip.style.display = "block";
+      const py = series.priceToCoordinate(best.price) ?? param.point.y;
+      tip.style.left = `${Math.min(param.point.x + 14, (containerRef.current?.clientWidth ?? 600) - 230)}px`;
+      tip.style.top = `${py - 26}px`;
     });
     chartRef.current = chart;
     zgSeriesRef.current = zg;
@@ -458,6 +546,11 @@ export function GexChart({
   return (
     <div ref={wrapperRef} className="relative min-h-0 flex-1 bg-background">
       <div ref={containerRef} className="absolute inset-0" />
+      <div
+        ref={tooltipRef}
+        className="pointer-events-none absolute z-20 rounded border bg-black/85 px-2 py-0.5 font-mono text-[11px] whitespace-nowrap backdrop-blur-sm"
+        style={{ display: "none" }}
+      />
       <div
         className="pointer-events-none absolute top-2 left-2 z-10 flex items-center gap-2.5 font-mono text-[11px]"
         style={{ color: GEXBOT.textDim }}
