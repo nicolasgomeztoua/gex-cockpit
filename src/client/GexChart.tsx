@@ -225,12 +225,13 @@ export function GexChart({
       const series = mainSeriesRef.current;
       const tip = tooltipRef.current;
       if (!param.point || !series) {
-        primitiveRef.current?.setHoverPrice(null);
+        primitiveRef.current?.setHover(null);
         if (tip) tip.style.display = "none";
         return;
       }
       const price = series.coordinateToPrice(param.point.y);
-      primitiveRef.current?.setHoverPrice(price);
+      // priors are gated on the bar itself, so the x coordinate matters too
+      primitiveRef.current?.setHover(price === null ? null : { price, x: param.point.x });
       if (price === null || !tip) return;
 
       const d = hoverDataRef.current;
