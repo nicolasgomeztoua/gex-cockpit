@@ -4,8 +4,14 @@ import type { FeedKey, FeedKind, FeedSnapshot, StrikeRow, Ticker } from "../shar
 
 const POLL_MS = Number(process.env.POLL_MS ?? 10_000);
 const MAX_BACKOFF_MS = 5 * 60_000;
-/** MOCK=1: replay a synthetic session off one real snapshot — nothing is persisted. */
-export const MOCK = !!process.env.MOCK && process.env.MOCK !== "0";
+/** MOCK=1: run a synthetic session off one real snapshot — nothing is persisted. */
+export const REPLAY_DATE = process.env.REPLAY?.trim() || null;
+const MOCK_REQUESTED = !!process.env.MOCK && process.env.MOCK !== "0";
+export const MOCK = MOCK_REQUESTED && !REPLAY_DATE;
+
+if (REPLAY_DATE && MOCK_REQUESTED) {
+  console.warn("[poller] REPLAY takes precedence over MOCK; synthetic mode is disabled");
+}
 
 const FEEDS: { ticker: Ticker; kind: FeedKind }[] = [
   { ticker: "NDX", kind: "state" },
@@ -31,6 +37,16 @@ export function subscribe(fn: Listener): () => void {
 
 export function snapshots(): FeedSnapshot[] {
   return [...store.values()];
+}
+
+export function replaceSnapshots(next: FeedSnapshot[]): void {
+  store.clear();
+  for (const snap of next) store.set(snap.feed, snap);
+}
+
+export function publishSnapshot(snap: FeedSnapshot): void {
+  store.set(snap.feed, snap);
+  emit(snap);
 }
 
 function emit(s: FeedSnapshot): void {
@@ -70,6 +86,11 @@ async function pollLoop(ticker: Ticker, kind: FeedKind): Promise<void> {
 }
 
 export function startPoller(): void {
+  if (REPLAY_DATE) {
+    console.log(`[poller] REPLAY ${REPLAY_DATE} — recorded session, nothing persisted`);
+    void import("./replay").then(({ startReplay }) => startReplay());
+    return;
+  }
   if (MOCK) {
     console.log("[poller] MOCK mode — synthetic session, nothing persisted");
     void startMock();

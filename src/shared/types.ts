@@ -44,6 +44,16 @@ export interface SpotTick {
   spot: number;
 }
 
+export interface ReplayStatus {
+  date: string;
+  playing: boolean;
+  speed: 1 | 2 | 5 | 10 | 30;
+  /** virtual replay clock, epoch seconds */
+  clock: number;
+  startTs: number;
+  endTs: number;
+}
+
 export interface InitPayload {
   feeds: FeedSnapshot[];
   spotHistory: Record<Ticker, [number, number][]>; // [epoch sec, spot]
@@ -51,4 +61,5 @@ export interface InitPayload {
   zgHistory: Record<Ticker, [number, number][]>;
   /** true when the server is running with MOCK=1 (synthetic data, nothing persisted) */
   mock: boolean;
+  replay: ReplayStatus | null;
 }

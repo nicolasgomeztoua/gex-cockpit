@@ -92,7 +92,7 @@ function App() {
     [s.zgHistory.QQQ, ratio],
   );
 
-  const historyKey = useNq ? "nq" : "spot";
+  const historyKey = `${useNq ? "nq" : "spot"}:${s.historyRevision}`;
 
   // alerts run on the same displayed-unit data the charts show
   useLevelAlerts(
@@ -136,6 +136,7 @@ function App() {
           feeds={s.feeds}
           connected={s.connected}
           mock={s.mock}
+          replay={s.replay}
         />
       </SidebarProvider>
     </TooltipProvider>

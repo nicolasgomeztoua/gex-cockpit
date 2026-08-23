@@ -1,5 +1,5 @@
-import { useSyncExternalStore, type ReactNode } from "react";
-import { ArrowLeft, Bell, ChevronDown, Home, Play, Settings, Type } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { ArrowLeft, Bell, ChevronDown, Home, Pause, Play, Settings, Type } from "lucide-react";
 import {
   Sidebar as SidebarRoot,
   SidebarContent,
@@ -27,7 +27,7 @@ import {
   type TickerKey,
   type TickerSettings,
 } from "./theme";
-import type { FeedKey, FeedSnapshot } from "../shared/types";
+import type { FeedKey, FeedSnapshot, ReplayStatus } from "../shared/types";
 import { cn } from "./lib/utils";
 
 const fmtPrice = (v: number) =>
@@ -191,6 +191,116 @@ function Field(props: { label: string; children: ReactNode }) {
   );
 }
 
+const postReplay = (action: string, value?: number) =>
+  fetch("/api/replay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(value === undefined ? { action } : { action, value }),
+  });
+
+function Playback({ replay }: { replay: ReplayStatus }) {
+  const [sliderClock, setSliderClock] = useState(replay.clock);
+  const dragging = useRef(false);
+  const latestSeek = useRef(replay.clock);
+  const lastPostAt = useRef(0);
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!dragging.current) {
+      setSliderClock(replay.clock);
+      latestSeek.current = replay.clock;
+    }
+  }, [replay.clock]);
+
+  useEffect(
+    () => () => {
+      if (pending.current) clearTimeout(pending.current);
+    },
+    [],
+  );
+
+  const seek = (immediate = false) => {
+    const run = () => {
+      pending.current = null;
+      lastPostAt.current = Date.now();
+      void postReplay("seek", latestSeek.current);
+    };
+    if (immediate) {
+      if (pending.current) clearTimeout(pending.current);
+      run();
+      return;
+    }
+    const delay = Math.max(0, 250 - (Date.now() - lastPostAt.current));
+    if (delay === 0) run();
+    else if (!pending.current) pending.current = setTimeout(run, delay);
+  };
+
+  const clockLabel = new Date(sliderClock * 1000).toLocaleTimeString("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  return (
+    <Section title="playback" color="#f59e0b">
+      <div className="px-1.5 py-1.5">
+        <div className="flex items-center gap-2">
+          <button
+            data-probe="replay-toggle"
+            onClick={() => void postReplay(replay.playing ? "pause" : "play")}
+            className="flex size-8 cursor-pointer items-center justify-center rounded border border-amber-500/60 text-amber-400 transition-colors hover:bg-amber-500/10"
+            title={replay.playing ? "Pause replay" : "Play replay"}
+          >
+            {replay.playing ? <Pause className="size-4" /> : <Play className="size-4" />}
+          </button>
+          <span data-probe="replay-clock" className="text-[16px] font-semibold tabular-nums text-foreground">
+            {clockLabel}
+          </span>
+          <span className="ml-auto text-[11px] text-muted-foreground">ET</span>
+        </div>
+        <input
+          data-probe="replay-seek"
+          type="range"
+          min={replay.startTs}
+          max={replay.endTs}
+          step={1}
+          value={sliderClock}
+          onPointerDown={event => {
+            dragging.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerUp={() => {
+            dragging.current = false;
+            seek(true);
+          }}
+          onChange={event => {
+            const value = Number(event.target.value);
+            setSliderClock(value);
+            latestSeek.current = value;
+            seek();
+          }}
+          className="mt-3 h-1.5 w-full cursor-pointer accent-amber-500"
+        />
+        <Tabs
+          value={String(replay.speed)}
+          onValueChange={value => void postReplay("speed", Number(value))}
+          className="mt-2"
+        >
+          <TabsList data-probe="replay-speed" className="w-full">
+            {[1, 2, 5, 10, 30].map(value => (
+              <TabsTrigger key={value} value={String(value)}>
+                {value}x
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
+    </Section>
+  );
+}
+
 /** Left-edge drag strip: resizes the sidebar (persisted). */
 function ResizeHandle() {
   const setSidebarWidth = useUiStore(u => u.setSidebarWidth);
@@ -222,9 +332,10 @@ interface Props {
   feeds: Partial<Record<FeedKey, FeedSnapshot>>;
   connected: boolean;
   mock: boolean;
+  replay: ReplayStatus | null;
 }
 
-export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
+export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: Props) {
   const scope = useUiStore(u => u.scope);
   const setScope = useUiStore(u => u.setScope);
   const view = useUiStore(u => u.sidebarView);
@@ -272,6 +383,15 @@ export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
                 style={{ color: C.zeroGamma, borderColor: C.zeroGamma }}
               >
                 MOCK
+              </span>
+            )}
+            {replay && (
+              <span
+                data-probe="replay-badge"
+                className="mr-1 rounded border px-1.5 py-px text-[10px] font-bold tracking-wider"
+                style={{ color: "#f59e0b", borderColor: "#f59e0b" }}
+              >
+                REPLAY {replay.date}
               </span>
             )}
             {view === "main" && (
@@ -367,6 +487,8 @@ export function Sidebar({ settings, onChange, feeds, connected, mock }: Props) {
                 );
               })}
             </Section>
+
+            {replay && <Playback replay={replay} />}
           </>
         )}
 

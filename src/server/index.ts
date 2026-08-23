@@ -1,9 +1,32 @@
 import index from "../client/index.html";
-import { MOCK, mockSpotHistory, mockZgHistory, snapshots, startPoller, subscribe } from "./poller";
+import {
+  MOCK,
+  REPLAY_DATE,
+  mockSpotHistory,
+  mockZgHistory,
+  snapshots,
+  startPoller,
+  subscribe,
+} from "./poller";
 import { loadClientSettings, saveClientSettings, spotHistory, zgHistory } from "./db";
+import {
+  controlReplay,
+  prepareReplay,
+  replayInitPayload,
+  subscribeReplay,
+} from "./replay";
 import type { InitPayload } from "../shared/types";
 
 const PORT = Number(process.env.PORT ?? 4321);
+
+if (REPLAY_DATE) {
+  try {
+    prepareReplay(REPLAY_DATE);
+  } catch (err) {
+    console.error(`[replay] ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}
 
 function sseResponse(): Response {
   const encoder = new TextEncoder();
@@ -13,21 +36,31 @@ function sseResponse(): Response {
       const send = (event: string, data: unknown) =>
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
 
-      const init: InitPayload = {
-        feeds: snapshots(),
-        spotHistory: MOCK
-          ? { NDX: mockSpotHistory("NDX"), QQQ: mockSpotHistory("QQQ"), NQ_NDX: mockSpotHistory("NQ_NDX") }
-          : { NDX: spotHistory("NDX"), QQQ: spotHistory("QQQ"), NQ_NDX: spotHistory("NQ_NDX") },
-        zgHistory: MOCK
-          ? { NDX: mockZgHistory("NDX"), QQQ: mockZgHistory("QQQ"), NQ_NDX: mockZgHistory("NQ_NDX") }
-          : { NDX: zgHistory("NDX"), QQQ: zgHistory("QQQ"), NQ_NDX: zgHistory("NQ_NDX") },
-        mock: MOCK,
-      };
+      const init: InitPayload = REPLAY_DATE
+        ? replayInitPayload()
+        : {
+            feeds: snapshots(),
+            spotHistory: MOCK
+              ? { NDX: mockSpotHistory("NDX"), QQQ: mockSpotHistory("QQQ"), NQ_NDX: mockSpotHistory("NQ_NDX") }
+              : { NDX: spotHistory("NDX"), QQQ: spotHistory("QQQ"), NQ_NDX: spotHistory("NQ_NDX") },
+            zgHistory: MOCK
+              ? { NDX: mockZgHistory("NDX"), QQQ: mockZgHistory("QQQ"), NQ_NDX: mockZgHistory("NQ_NDX") }
+              : { NDX: zgHistory("NDX"), QQQ: zgHistory("QQQ"), NQ_NDX: zgHistory("NQ_NDX") },
+            mock: MOCK,
+            replay: null,
+          };
       send("init", init);
 
       const unsub = subscribe(snap => {
         try {
           send("update", snap);
+        } catch {
+          cleanup();
+        }
+      });
+      const unsubReplay = subscribeReplay(message => {
+        try {
+          send(message.event, message.data);
         } catch {
           cleanup();
         }
@@ -41,6 +74,7 @@ function sseResponse(): Response {
       }, 15_000);
       cleanup = () => {
         unsub();
+        unsubReplay();
         clearInterval(heartbeat);
       };
     },
@@ -97,6 +131,24 @@ const server = Bun.serve({
         }
         saveClientSettings(body);
         return Response.json({ ok: true });
+      },
+    },
+    "/api/replay": {
+      POST: async req => {
+        if (!REPLAY_DATE) return Response.json({ error: "replay mode is not active" }, { status: 409 });
+        try {
+          const body = (await req.json()) as { action?: unknown; value?: unknown };
+          if (typeof body.action !== "string") throw new Error("action is required");
+          if (body.value !== undefined && typeof body.value !== "number") {
+            throw new Error("value must be a number");
+          }
+          return Response.json({ ok: true, replay: controlReplay(body.action, body.value) });
+        } catch (err) {
+          return Response.json(
+            { error: err instanceof Error ? err.message : String(err) },
+            { status: 400 },
+          );
+        }
       },
     },
     "/api/health": () => Response.json({ status: "ok", feeds: snapshots().length }),

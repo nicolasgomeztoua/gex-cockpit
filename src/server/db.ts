@@ -1,7 +1,9 @@
 import { Database } from "bun:sqlite";
 import type { FeedSnapshot, Ticker } from "../shared/types";
 
-const db = new Database("data/gex-cockpit.db", { create: true });
+export const DB_PATH = process.env.DB_PATH ?? "data/gex-cockpit.db";
+
+const db = new Database(DB_PATH, { create: true });
 db.exec("PRAGMA journal_mode = WAL;");
 db.exec(`
   CREATE TABLE IF NOT EXISTS snapshots (
@@ -79,4 +81,25 @@ export function loadClientSettings(): unknown {
 
 export function saveClientSettings(json: string): void {
   putSettingsStmt.run(json, Date.now());
+}
+
+export interface StoredSnapshot {
+  providerTs: number;
+  snapshot: FeedSnapshot;
+}
+
+export function storedSnapshots(): StoredSnapshot[] {
+  const rows = db
+    .query(`SELECT provider_ts, payload FROM snapshots ORDER BY provider_ts, feed`)
+    .all() as { provider_ts: number; payload: string }[];
+  return rows.map(row => ({
+    providerTs: row.provider_ts,
+    snapshot: JSON.parse(row.payload) as FeedSnapshot,
+  }));
+}
+
+export function storedSpotTicks(): { ticker: Ticker; ts: number; spot: number }[] {
+  return db
+    .query(`SELECT ticker, ts, spot FROM spot_ticks ORDER BY ts, ticker`)
+    .all() as { ticker: Ticker; ts: number; spot: number }[];
 }
