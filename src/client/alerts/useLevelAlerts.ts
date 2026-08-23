@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { LEVEL_META, type LayerSettings, type LevelKey, type TickerKey } from "../theme";
+import { stepAlertMachine, type AlertMachine } from "./machine";
 import { playSound } from "./sounds";
 import type { FeedSnapshot } from "../../shared/types";
 
@@ -9,11 +10,6 @@ export interface AlertChartInput {
   ticker: TickerKey;
   state?: FeedSnapshot;
   oi?: FeedSnapshot;
-}
-
-interface ArmState {
-  phase: "armed" | "cooling";
-  firedAt: number; // epoch ms
 }
 
 const REPEAT_EVERY_MS = 25_000;
@@ -56,7 +52,7 @@ declare global {
  * until the cockpit window is refocused).
  */
 export function useLevelAlerts(charts: AlertChartInput[], settings: LayerSettings): void {
-  const machines = useRef(new Map<string, ArmState>());
+  const machines = useRef(new Map<string, AlertMachine>());
   const prevSpots = useRef(new Map<string, number>());
   const prevUnit = useRef(settings.unit);
   const repeatTimers = useRef(new Map<string, ReturnType<typeof setInterval>>());
@@ -120,27 +116,20 @@ export function useLevelAlerts(charts: AlertChartInput[], settings: LayerSetting
           continue;
         }
 
-        const machine = machines.current.get(machineKey) ?? { phase: "armed" as const, firedAt: 0 };
-        const away = Math.abs(spot - price);
-        const rearmBand = Math.max(2 * dist, spot * 0.0005);
+        const { machine, fired } = stepAlertMachine({
+          machine: machines.current.get(machineKey),
+          prevSpot,
+          spot,
+          price,
+          dist,
+          mode,
+          cooldownSec,
+          now,
+        });
+        machines.current.set(machineKey, machine);
+        if (!fired) continue;
 
-        if (machine.phase === "cooling") {
-          if (now - machine.firedAt >= cooldownSec * 1000 && away > rearmBand) {
-            machine.phase = "armed";
-          }
-          machines.current.set(machineKey, machine);
-          continue;
-        }
-
-        const crossed = prevSpot !== spot && (prevSpot - price) * (spot - price) <= 0;
-        const approached = away <= dist;
-        const fire =
-          mode === "cross" ? crossed : mode === "approach" ? approached : crossed || approached;
-        if (!fire) continue;
-
-        const kind = crossed ? "cross" : "approach";
-        machines.current.set(machineKey, { phase: "cooling", firedAt: now });
-
+        const kind = fired;
         const meta = LEVEL_META[key];
         const verb = kind === "cross" ? "crossed" : "approaching";
         const title = `${chart.label} — ${verb} ${meta.name}`;

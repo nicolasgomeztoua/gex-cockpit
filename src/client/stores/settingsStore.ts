@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { rpc } from "../api";
 import {
   DEFAULT_SETTINGS,
   migrateV3,
@@ -28,6 +29,10 @@ interface SettingsStore {
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** The server intentionally accepts any JSON object so future keys survive. */
+const settingsJson = (settings: LayerSettings): Record<string, unknown> =>
+  settings as unknown as Record<string, unknown>;
+
 /**
  * Settings state backed by the server's SQLite (`/api/settings`), mirrored in
  * localStorage for instant boot. Server copy wins on load; writes are
@@ -45,7 +50,7 @@ export const useSettingsStore = create<SettingsStore>(set => ({
     }
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      void fetch("/api/settings", { method: "PUT", body: JSON.stringify(s) }).catch(() => {});
+      void rpc.api.settings.$put({ json: settingsJson(s) }).catch(() => {});
     }, 400);
   },
 }));
@@ -58,7 +63,7 @@ export function hydrateSettings(): void {
   hydrateStarted = true;
   void (async () => {
     try {
-      const res = await fetch("/api/settings");
+      const res = await rpc.api.settings.$get();
       const { settings: remote } = (await res.json()) as { settings: unknown };
       if (remote) {
         const merged = settingsFromUnknown(remote);
@@ -77,7 +82,7 @@ export function hydrateSettings(): void {
         }
         localStorage.removeItem(V3_KEY);
         useSettingsStore.setState({ settings: seed, hydrated: true });
-        await fetch("/api/settings", { method: "PUT", body: JSON.stringify(seed) });
+        await rpc.api.settings.$put({ json: settingsJson(seed) });
         localStorage.setItem(MIRROR_KEY, JSON.stringify(seed));
       }
     } catch {

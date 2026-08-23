@@ -1,5 +1,6 @@
 import { storedSnapshots, storedSpotTicks, type StoredSnapshot } from "./db";
 import { publishSnapshot, replaceSnapshots, snapshots } from "./poller";
+import { availableDates, selectSessionEvents, selectSessionTicks } from "./replay-select";
 import type { InitPayload, ReplayStatus, Ticker } from "../shared/types";
 
 const SPEEDS = [1, 2, 5, 10, 30] as const;
@@ -9,24 +10,11 @@ type ReplayEvent =
   | { event: "replay-status"; data: ReplayStatus };
 type ReplayListener = (event: ReplayEvent) => void;
 
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/New_York",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
 const emptyHistories = (): Record<Ticker, [number, number][]> => ({
   NDX: [],
   QQQ: [],
   NQ_NDX: [],
 });
-
-function etDate(epochSec: number): string {
-  const parts = dateFormatter.formatToParts(new Date(epochSec * 1000));
-  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
-}
 
 let date = "";
 let events: StoredSnapshot[] = [];
@@ -43,15 +31,15 @@ const listeners = new Set<ReplayListener>();
 
 export function prepareReplay(requestedDate: string): void {
   const allEvents = storedSnapshots();
-  const availableDates = [...new Set(allEvents.map(row => etDate(row.providerTs)))].sort();
-  events = allEvents.filter(row => etDate(row.providerTs) === requestedDate);
+  events = selectSessionEvents(allEvents, requestedDate);
   if (!events.length) {
-    const available = availableDates.length ? availableDates.join(", ") : "none";
+    const dates = availableDates(allEvents);
+    const available = dates.length ? dates.join(", ") : "none";
     throw new Error(`no snapshots for ${requestedDate}; available dates: ${available}`);
   }
 
   date = requestedDate;
-  ticks = storedSpotTicks().filter(row => etDate(row.ts) === requestedDate);
+  ticks = selectSessionTicks(storedSpotTicks(), requestedDate);
   clock = events[0].providerTs;
   cursor = firstEventAfter(clock);
   playing = true;

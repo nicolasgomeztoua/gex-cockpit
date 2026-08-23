@@ -12,6 +12,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { Camera, Expand, Maximize } from "lucide-react";
+import { toCandles } from "./chart/candles";
 import {
   GexProfilePrimitive,
   VerticalNowLinePrimitive,
@@ -49,28 +50,6 @@ const fmtET = (sec: number, withSeconds = false) =>
     ...(withSeconds ? { second: "2-digit" } : {}),
     hour12: false,
   });
-
-function toCandles(series: [number, number][]): CandlestickData<UTCTimestamp>[] {
-  const buckets = new Map<number, number[]>();
-  for (const [sec, spot] of series) {
-    const m = Math.floor(sec / 60) * 60;
-    const b = buckets.get(m);
-    if (b) b.push(spot);
-    else buckets.set(m, [spot]);
-  }
-  return [...buckets.keys()]
-    .sort((a, b) => a - b)
-    .map(k => {
-      const v = buckets.get(k)!;
-      return {
-        time: k as UTCTimestamp,
-        open: v[0],
-        close: v[v.length - 1],
-        low: Math.min(...v),
-        high: Math.max(...v),
-      };
-    });
-}
 
 interface Level {
   key: LevelKey;

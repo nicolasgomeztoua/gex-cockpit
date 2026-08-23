@@ -15,6 +15,7 @@ import { Switch } from "./components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Input } from "./components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
+import { rpc } from "./api";
 import { ensureAudio, playSound } from "./alerts/sounds";
 import { SIDEBAR_MAX_W, SIDEBAR_MIN_W, useUiStore } from "./stores/uiStore";
 import {
@@ -191,12 +192,10 @@ function Field(props: { label: string; children: ReactNode }) {
   );
 }
 
-const postReplay = (action: string, value?: number) =>
-  fetch("/api/replay", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(value === undefined ? { action } : { action, value }),
-  });
+type ReplayAction = "play" | "pause" | "seek" | "speed";
+
+const postReplay = (action: ReplayAction, value?: number) =>
+  rpc.api.replay.$post({ json: value === undefined ? { action } : { action, value } });
 
 function Playback({ replay }: { replay: ReplayStatus }) {
   const [sliderClock, setSliderClock] = useState(replay.clock);

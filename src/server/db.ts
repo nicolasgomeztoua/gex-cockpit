@@ -1,76 +1,86 @@
 import { Database } from "bun:sqlite";
+import { join } from "node:path";
+import { and, asc, eq, gte, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { appSettings, snapshots, spotTicks } from "./schema";
 import type { FeedSnapshot, Ticker } from "../shared/types";
 
 export const DB_PATH = process.env.DB_PATH ?? "data/gex-cockpit.db";
 
-const db = new Database(DB_PATH, { create: true });
-db.exec("PRAGMA journal_mode = WAL;");
-db.exec(`
-  CREATE TABLE IF NOT EXISTS snapshots (
-    feed        TEXT    NOT NULL,
-    provider_ts INTEGER NOT NULL,
-    fetched_at  INTEGER NOT NULL,
-    spot        REAL    NOT NULL,
-    payload     TEXT    NOT NULL,
-    PRIMARY KEY (feed, provider_ts)
-  );
-  CREATE TABLE IF NOT EXISTS spot_ticks (
-    ticker TEXT    NOT NULL,
-    ts     INTEGER NOT NULL,
-    spot   REAL    NOT NULL,
-    PRIMARY KEY (ticker, ts)
-  );
-  CREATE TABLE IF NOT EXISTS app_settings (
-    key        TEXT    PRIMARY KEY,
-    value      TEXT    NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
-`);
+const sqlite = new Database(DB_PATH, { create: true });
+sqlite.exec("PRAGMA journal_mode = WAL;");
 
-const insertSnapshotStmt = db.prepare(
-  `INSERT OR IGNORE INTO snapshots (feed, provider_ts, fetched_at, spot, payload)
-   VALUES (?, ?, ?, ?, ?)`,
-);
-const insertTickStmt = db.prepare(
-  `INSERT OR IGNORE INTO spot_ticks (ticker, ts, spot) VALUES (?, ?, ?)`,
-);
-const spotHistoryStmt = db.prepare(
-  `SELECT ts, spot FROM spot_ticks WHERE ticker = ? AND ts >= ? ORDER BY ts`,
-);
-const zgHistoryStmt = db.prepare(
-  `SELECT provider_ts AS ts, json_extract(payload, '$.majors.zeroGamma') AS zg
-   FROM snapshots WHERE feed = ? AND provider_ts >= ? AND zg IS NOT NULL
-   ORDER BY provider_ts`,
-);
+export const db = drizzle(sqlite, { schema: { appSettings, snapshots, spotTicks } });
+
+// Resolved off this module, not the cwd, so probes and one-off scripts can boot
+// the server from anywhere. The baseline migration is IF NOT EXISTS, so a
+// pre-migrations database picks up only the bookkeeping table and keeps its rows.
+migrate(db, { migrationsFolder: join(import.meta.dir, "../../drizzle") });
+
+/**
+ * Zero gamma lives inside `majors` in current snapshots. Early local database
+ * rows stored it at the top level, so read both shapes without rewriting data.
+ */
+const zeroGammaJson = sql<number>`coalesce(
+  json_extract(${snapshots.payload}, '$.majors.zeroGamma'),
+  json_extract(${snapshots.payload}, '$.zeroGamma')
+)`;
 
 export function persistSnapshot(s: FeedSnapshot): void {
-  insertSnapshotStmt.run(s.feed, s.providerTs, s.fetchedAt, s.spot, JSON.stringify(s));
-  insertTickStmt.run(s.ticker, s.providerTs, s.spot);
+  db.insert(snapshots)
+    .values({
+      feed: s.feed,
+      providerTs: s.providerTs,
+      fetchedAt: s.fetchedAt,
+      spot: s.spot,
+      payload: JSON.stringify(s),
+    })
+    .onConflictDoNothing()
+    .run();
+  db.insert(spotTicks)
+    .values({ ticker: s.ticker, ts: s.providerTs, spot: s.spot })
+    .onConflictDoNothing()
+    .run();
 }
 
 /** Spot ticks for the last 24h — covers the current session plus context. */
 export function spotHistory(ticker: Ticker): [number, number][] {
   const sinceSec = Math.floor(Date.now() / 1000) - 24 * 3600;
-  const rows = spotHistoryStmt.all(ticker, sinceSec) as { ts: number; spot: number }[];
+  const rows = db
+    .select({ ts: spotTicks.ts, spot: spotTicks.spot })
+    .from(spotTicks)
+    .where(and(eq(spotTicks.ticker, ticker), gte(spotTicks.ts, sinceSec)))
+    .orderBy(asc(spotTicks.ts))
+    .all();
   return rows.map(r => [r.ts, r.spot]);
 }
 
 /** Zero-gamma level over the last 24h, from the persisted classic snapshots. */
 export function zgHistory(ticker: Ticker): [number, number][] {
   const sinceSec = Math.floor(Date.now() / 1000) - 24 * 3600;
-  const rows = zgHistoryStmt.all(`${ticker}:oi`, sinceSec) as { ts: number; zg: number }[];
+  const rows = db
+    .select({ ts: snapshots.providerTs, zg: zeroGammaJson })
+    .from(snapshots)
+    .where(
+      and(
+        eq(snapshots.feed, `${ticker}:oi`),
+        gte(snapshots.providerTs, sinceSec),
+        sql`${zeroGammaJson} IS NOT NULL`,
+      ),
+    )
+    .orderBy(asc(snapshots.providerTs))
+    .all();
   return rows.map(r => [r.ts, r.zg]);
 }
 
-const getSettingsStmt = db.prepare(`SELECT value FROM app_settings WHERE key = 'client'`);
-const putSettingsStmt = db.prepare(
-  `INSERT INTO app_settings (key, value, updated_at) VALUES ('client', ?, ?)
-   ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-);
-
 /** Stored client settings JSON, or null if none saved yet. */
 export function loadClientSettings(): unknown {
-  const row = getSettingsStmt.get() as { value: string } | null;
+  const row = db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, "client"))
+    .get();
   if (!row) return null;
   try {
     return JSON.parse(row.value);
@@ -80,7 +90,13 @@ export function loadClientSettings(): unknown {
 }
 
 export function saveClientSettings(json: string): void {
-  putSettingsStmt.run(json, Date.now());
+  db.insert(appSettings)
+    .values({ key: "client", value: json, updatedAt: Date.now() })
+    .onConflictDoUpdate({
+      target: appSettings.key,
+      set: { value: sql`excluded.value`, updatedAt: sql`excluded.updated_at` },
+    })
+    .run();
 }
 
 export interface StoredSnapshot {
@@ -90,16 +106,20 @@ export interface StoredSnapshot {
 
 export function storedSnapshots(): StoredSnapshot[] {
   const rows = db
-    .query(`SELECT provider_ts, payload FROM snapshots ORDER BY provider_ts, feed`)
-    .all() as { provider_ts: number; payload: string }[];
+    .select({ providerTs: snapshots.providerTs, payload: snapshots.payload })
+    .from(snapshots)
+    .orderBy(asc(snapshots.providerTs), asc(snapshots.feed))
+    .all();
   return rows.map(row => ({
-    providerTs: row.provider_ts,
+    providerTs: row.providerTs,
     snapshot: JSON.parse(row.payload) as FeedSnapshot,
   }));
 }
 
 export function storedSpotTicks(): { ticker: Ticker; ts: number; spot: number }[] {
   return db
-    .query(`SELECT ticker, ts, spot FROM spot_ticks ORDER BY ts, ticker`)
+    .select({ ticker: spotTicks.ticker, ts: spotTicks.ts, spot: spotTicks.spot })
+    .from(spotTicks)
+    .orderBy(asc(spotTicks.ts), asc(spotTicks.ticker))
     .all() as { ticker: Ticker; ts: number; spot: number }[];
 }
