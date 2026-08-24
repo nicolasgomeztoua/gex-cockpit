@@ -100,6 +100,8 @@ vite.config.ts  React + Tailwind v4, build output, and dev API proxy
   3 seconds because establishing provider TLS is measurably slower than one second;
   after rebuilding, the interrupted request is retried at the normal 1-second limit.
 - Spot is GexBot context data, not exchange OHLC — candles are 1-minute buckets of polled ticks.
+- Spot and zero-gamma histories preserve provider timestamps. Gaps longer than
+  30 seconds render as proportional whitespace instead of a false connecting line.
 - History lands in `data/gex-cockpit.db` (SQLite, gitignored). Mock mode never writes.
 - Strike-row index semantics (index 1 = volume/state value, index 2 = OI value) were
   verified against live responses; see `docs/original-brief.md` for the details.

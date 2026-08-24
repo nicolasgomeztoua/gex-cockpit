@@ -12,7 +12,12 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { Camera, Expand, Maximize } from "lucide-react";
-import { toCandles } from "./chart/candles";
+import {
+  lineGapBetween,
+  toCandles,
+  toLineData,
+  whitespaceBetween,
+} from "./chart/candles";
 import {
   GexProfilePrimitive,
   VerticalNowLinePrimitive,
@@ -136,7 +141,9 @@ export function GexChart({
   const nowLineRef = useRef<VerticalNowLinePrimitive | null>(null);
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
   const lastTsRef = useRef<number | null>(null);
+  const lastSpotRef = useRef<number | null>(null);
   const lastZgTsRef = useRef<number | null>(null);
+  const lastZgRef = useRef<number | null>(null);
   const candleRef = useRef<CandlestickData<UTCTimestamp> | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   // latest data for the crosshair handler (subscribed once, reads per event)
@@ -316,6 +323,7 @@ export function GexChart({
       mainSeriesRef.current = null;
       priceLinesRef.current = new Map();
       lastTsRef.current = null;
+      lastSpotRef.current = null;
       candleRef.current = null;
     }
     // cyan current-price line, gexbot-style. Known limitation: on candles the
@@ -355,6 +363,7 @@ export function GexChart({
   // spot data: full load when the basis changes, incremental update() otherwise
   useEffect(() => {
     lastTsRef.current = null; // historyKey change → force full reload below
+    lastSpotRef.current = null;
     candleRef.current = null;
   }, [historyKey]);
 
@@ -367,13 +376,19 @@ export function GexChart({
       if (isCandles) {
         const candles = toCandles(spotSeries);
         (series as ISeriesApi<"Candlestick">).setData(candles);
-        candleRef.current = candles[candles.length - 1] ?? null;
+        candleRef.current = null;
+        for (let index = candles.length - 1; index >= 0; index -= 1) {
+          const point = candles[index];
+          if ("open" in point) {
+            candleRef.current = point;
+            break;
+          }
+        }
       } else {
-        (series as ISeriesApi<"Line">).setData(
-          spotSeries.map(([sec, v]) => ({ time: sec as UTCTimestamp, value: v })),
-        );
+        (series as ISeriesApi<"Line">).setData(toLineData(spotSeries));
       }
       lastTsRef.current = spotSeries[spotSeries.length - 1][0];
+      lastSpotRef.current = spotSeries[spotSeries.length - 1][1];
     } else {
       for (const [sec, v] of spotSeries) {
         if (sec <= lastTs) continue;
@@ -388,13 +403,26 @@ export function GexChart({
               low: Math.min(cur.low, v),
             };
           } else {
+            if (cur) {
+              for (const gap of whitespaceBetween(Number(cur.time), Number(bucket), 60, 60)) {
+                (series as ISeriesApi<"Candlestick">).update(gap);
+              }
+            }
             candleRef.current = { time: bucket, open: v, close: v, high: v, low: v };
           }
           (series as ISeriesApi<"Candlestick">).update(candleRef.current);
         } else {
+          const previousSec = lastTsRef.current;
+          const previousSpot = lastSpotRef.current;
+          if (previousSec !== null && previousSpot !== null) {
+            for (const gap of lineGapBetween(previousSec, previousSpot, sec)) {
+              (series as ISeriesApi<"Line">).update(gap);
+            }
+          }
           (series as ISeriesApi<"Line">).update({ time: sec as UTCTimestamp, value: v });
         }
         lastTsRef.current = sec;
+        lastSpotRef.current = v;
       }
     }
     nowLineRef.current?.setTime(lastTsRef.current as UTCTimestamp | null);
@@ -403,6 +431,7 @@ export function GexChart({
   // zero-gamma line data (same incremental pattern)
   useEffect(() => {
     lastZgTsRef.current = null;
+    lastZgRef.current = null;
   }, [historyKey]);
 
   useEffect(() => {
@@ -410,11 +439,19 @@ export function GexChart({
     if (!series) return;
     const lastTs = lastZgTsRef.current;
     if (lastTs === null) {
-      series.setData(zgSeries.map(([sec, v]) => ({ time: sec as UTCTimestamp, value: v })));
+      series.setData(toLineData(zgSeries));
+      lastZgRef.current = zgSeries.length ? zgSeries[zgSeries.length - 1][1] : null;
     } else {
       for (const [sec, v] of zgSeries) {
         if (sec <= lastTs) continue;
+        const previousSec = lastZgTsRef.current;
+        const previousZg = lastZgRef.current;
+        if (previousSec !== null && previousZg !== null) {
+          for (const gap of lineGapBetween(previousSec, previousZg, sec)) series.update(gap);
+        }
         series.update({ time: sec as UTCTimestamp, value: v });
+        lastZgTsRef.current = sec;
+        lastZgRef.current = v;
       }
     }
     lastZgTsRef.current = zgSeries.length ? zgSeries[zgSeries.length - 1][0] : null;
