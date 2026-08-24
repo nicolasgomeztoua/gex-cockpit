@@ -38,10 +38,15 @@ export function persistSnapshot(s: FeedSnapshot): void {
     })
     .onConflictDoNothing()
     .run();
-  db.insert(spotTicks)
-    .values({ ticker: s.ticker, ts: s.providerTs, spot: s.spot })
-    .onConflictDoNothing()
-    .run();
+  // State is the canonical spot sample. Gamma and Classic responses carry the
+  // same underlying price, but arrive with nearby timestamps and would create
+  // duplicate-looking ticks in the chart history.
+  if (s.kind === "state") {
+    db.insert(spotTicks)
+      .values({ ticker: s.ticker, ts: s.providerTs, spot: s.spot })
+      .onConflictDoNothing()
+      .run();
+  }
 }
 
 /** Spot ticks for the last 24h — covers the current session plus context. */

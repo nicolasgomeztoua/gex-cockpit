@@ -1,7 +1,20 @@
-import { fetchFeed } from "./gexbot";
+import {
+  assertGexbotApiKey,
+  fetchFeed,
+  fetchFuturesConversion,
+  GEX_AGGREGATION,
+} from "./gexbot";
 import { persistSnapshot } from "./db";
 import { PollRetryState, formatRetryDelay } from "./poll-retry";
-import type { FeedKey, FeedKind, FeedSnapshot, StrikeRow, Ticker } from "../shared/types";
+import type {
+  ConversionTicker,
+  FeedKey,
+  FeedKind,
+  FeedSnapshot,
+  FuturesConversion,
+  StrikeRow,
+  Ticker,
+} from "../shared/types";
 
 const POLL_MS = Number(process.env.POLL_MS ?? 10_000);
 /** MOCK=1: run a synthetic session off one real snapshot — nothing is persisted. */
@@ -15,20 +28,22 @@ if (REPLAY_DATE && MOCK_REQUESTED) {
 
 const FEEDS: { ticker: Ticker; kind: FeedKind }[] = [
   { ticker: "NDX", kind: "state" },
+  { ticker: "NDX", kind: "gamma" },
   { ticker: "NDX", kind: "oi" },
   { ticker: "QQQ", kind: "state" },
+  { ticker: "QQQ", kind: "gamma" },
   { ticker: "QQQ", kind: "oi" },
-  // NDX in NQ-future price space (native API conversion) — drives the NQ unit toggle
-  { ticker: "NQ_NDX", kind: "state" },
-  { ticker: "NQ_NDX", kind: "oi" },
 ];
 
 const TICKERS = [...new Set(FEEDS.map(f => f.ticker))];
 
 type Listener = (s: FeedSnapshot) => void;
+type ConversionListener = (c: FuturesConversion) => void;
 
 const store = new Map<FeedKey, FeedSnapshot>();
+const conversionStore = new Map<ConversionTicker, FuturesConversion>();
 const listeners = new Set<Listener>();
+const conversionListeners = new Set<ConversionListener>();
 
 export function subscribe(fn: Listener): () => void {
   listeners.add(fn);
@@ -37,6 +52,15 @@ export function subscribe(fn: Listener): () => void {
 
 export function snapshots(): FeedSnapshot[] {
   return [...store.values()];
+}
+
+export function conversions(): Partial<Record<ConversionTicker, FuturesConversion>> {
+  return Object.fromEntries(conversionStore) as Partial<Record<ConversionTicker, FuturesConversion>>;
+}
+
+export function subscribeConversions(fn: ConversionListener): () => void {
+  conversionListeners.add(fn);
+  return () => conversionListeners.delete(fn);
 }
 
 export function replaceSnapshots(next: FeedSnapshot[]): void {
@@ -95,18 +119,62 @@ async function pollLoop(ticker: Ticker, kind: FeedKind): Promise<void> {
   }
 }
 
+async function conversionLoop(ticker: ConversionTicker): Promise<void> {
+  const retry = new PollRetryState();
+  let delay = 0;
+  while (true) {
+    if (delay) await Bun.sleep(delay);
+    try {
+      const conversion = await fetchFuturesConversion(ticker);
+      const prev = conversionStore.get(ticker);
+      conversionStore.set(ticker, conversion);
+      if (
+        !prev
+        || prev.multiplier !== conversion.multiplier
+        || prev.additive !== conversion.additive
+        || prev.futureContract !== conversion.futureContract
+      ) {
+        for (const fn of conversionListeners) fn(conversion);
+        console.info(
+          `[poller] ${ticker}→${conversion.futureContract}: conversion ${conversion.multiplier.toFixed(6)}x ${conversion.additive >= 0 ? "+" : "−"} ${Math.abs(conversion.additive).toFixed(4)}`,
+        );
+      }
+      const recoveredFailures = retry.recovered();
+      if (recoveredFailures > 0) {
+        console.info(
+          `[poller] ${ticker}/NQ conversion: recovered after ${recoveredFailures} consecutive ${recoveredFailures === 1 ? "failure" : "failures"}`,
+        );
+      }
+      // GexBot documents conversion updates every 15 minutes during RTH.
+      delay = 15 * 60_000;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const decision = retry.failed();
+      delay = decision.delayMs;
+      console.error(
+        `[poller] ${ticker}/NQ conversion: ${msg} (failure ${decision.failureCount}; retrying in ${formatRetryDelay(delay)})`,
+      );
+    }
+  }
+}
+
 export function startPoller(): void {
   if (REPLAY_DATE) {
     console.log(`[poller] REPLAY ${REPLAY_DATE} — recorded session, nothing persisted`);
     void import("./replay").then(({ startReplay }) => startReplay());
     return;
   }
+  assertGexbotApiKey();
   if (MOCK) {
+    for (const ticker of ["NDX", "QQQ"] as ConversionTicker[]) void conversionLoop(ticker);
     console.log("[poller] MOCK mode — synthetic session, nothing persisted");
     void startMock();
     return;
   }
-  console.log(`[poller] polling every ${POLL_MS}ms (set POLL_MS to change)`);
+  console.log(
+    `[poller] polling ${GEX_AGGREGATION} profiles every ${POLL_MS}ms (set POLL_MS/GEX_AGGREGATION to change)`,
+  );
+  for (const ticker of ["NDX", "QQQ"] as ConversionTicker[]) void conversionLoop(ticker);
   for (const f of FEEDS) void pollLoop(f.ticker, f.kind);
 }
 
@@ -202,7 +270,7 @@ async function startMock(): Promise<void> {
       const spot = spots.get(ticker)! * (1 + 0.00035 * randn());
       spots.set(ticker, spot);
       mockHistories.get(ticker)!.push([nowSec, spot]);
-      for (const kind of ["state", "oi"] as FeedKind[]) {
+      for (const kind of ["state", "gamma", "oi"] as FeedKind[]) {
         const key = `${ticker}:${kind}` as FeedKey;
         const base = bases.get(key)!;
         const strikes: StrikeRow[] = base.strikes.map(([k, v, o, p]) => [

@@ -69,6 +69,7 @@ function snapshot(ticker: Ticker, kind: FeedKind, ts: number, spot: number, step
     feed: `${ticker}:${kind}`,
     ticker,
     kind,
+    aggregation: "zero",
     providerTs: ts,
     fetchedAt: ts * 1000 + 75,
     spot,

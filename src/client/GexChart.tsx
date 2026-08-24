@@ -61,8 +61,10 @@ interface Level {
 
 /** which profile each major is computed from — the bar its line sits on */
 const LEVEL_ANCHOR: Record<Exclude<LevelKey, "zg">, ProfileId> = {
-  mlg: "state",
-  msg: "state",
+  mlg: "gamma",
+  msg: "gamma",
+  mcg: "state",
+  mpg: "state",
   mpv: "vol",
   mnv: "vol",
   mpo: "oi",
@@ -72,12 +74,15 @@ const LEVEL_ANCHOR: Record<Exclude<LevelKey, "zg">, ProfileId> = {
 /** All level lines except zero gamma, which is a continuous series. */
 function levelLines(
   state: FeedSnapshot | undefined,
+  gamma: FeedSnapshot | undefined,
   oi: FeedSnapshot | undefined,
   s: TickerSettings,
 ): Level[] {
   const src: Record<Exclude<LevelKey, "zg">, number | undefined> = {
-    mlg: state?.majors.posVol,
-    msg: state?.majors.negVol,
+    mlg: gamma?.majors.posVol,
+    msg: gamma?.majors.negVol,
+    mcg: state?.majors.posVol,
+    mpg: state?.majors.negVol,
     mpv: oi?.majors.posVol,
     mnv: oi?.majors.negVol,
     mpo: oi?.majors.posOI,
@@ -104,6 +109,7 @@ interface Props {
   /** changes when the price basis of the history changes (unit toggle) — forces full reload */
   historyKey: string;
   state?: FeedSnapshot;
+  gamma?: FeedSnapshot;
   oi?: FeedSnapshot;
   spotSeries: [number, number][];
   zgSeries: [number, number][];
@@ -115,6 +121,7 @@ export function GexChart({
   unitTag,
   historyKey,
   state,
+  gamma,
   oi,
   spotSeries,
   zgSeries,
@@ -135,12 +142,14 @@ export function GexChart({
   // latest data for the crosshair handler (subscribed once, reads per event)
   const hoverDataRef = useRef<{
     state?: FeedSnapshot;
+    gamma?: FeedSnapshot;
     oi?: FeedSnapshot;
     settings: TickerSettings;
     zgLast: number | null;
   }>({ settings, zgLast: null });
   hoverDataRef.current = {
     state,
+    gamma,
     oi,
     settings,
     zgLast: zgSeries.length ? zgSeries[zgSeries.length - 1][1] : null,
@@ -235,11 +244,17 @@ export function GexChart({
       const d = hoverDataRef.current;
       const entries: { key: LevelKey; price: number; value: number | null }[] = [];
       const lv = d.settings.levels;
+      if (d.gamma) {
+        if (lv.mlg.line && d.gamma.majors.posVol)
+          entries.push({ key: "mlg", price: d.gamma.majors.posVol, value: gexAt(d.gamma.strikes, d.gamma.majors.posVol, 1) });
+        if (lv.msg.line && d.gamma.majors.negVol)
+          entries.push({ key: "msg", price: d.gamma.majors.negVol, value: gexAt(d.gamma.strikes, d.gamma.majors.negVol, 1) });
+      }
       if (d.state) {
-        if (lv.mlg.line && d.state.majors.posVol)
-          entries.push({ key: "mlg", price: d.state.majors.posVol, value: gexAt(d.state.strikes, d.state.majors.posVol, 1) });
-        if (lv.msg.line && d.state.majors.negVol)
-          entries.push({ key: "msg", price: d.state.majors.negVol, value: gexAt(d.state.strikes, d.state.majors.negVol, 1) });
+        if (lv.mcg.line && d.state.majors.posVol)
+          entries.push({ key: "mcg", price: d.state.majors.posVol, value: gexAt(d.state.strikes, d.state.majors.posVol, 1) });
+        if (lv.mpg.line && d.state.majors.negVol)
+          entries.push({ key: "mpg", price: d.state.majors.negVol, value: gexAt(d.state.strikes, d.state.majors.negVol, 1) });
       }
       if (d.oi) {
         if (lv.mpv.line && d.oi.majors.posVol)
@@ -316,7 +331,7 @@ export function GexChart({
             wickUpColor: GEXBOT.state.candleUp,
             wickDownColor: GEXBOT.state.candleDown,
             priceLineVisible: true,
-            priceLineColor: GEXBOT.state.longGamma,
+            priceLineColor: GEXBOT.state.callGex,
             priceLineStyle: LineStyle.Solid,
             priceLineWidth: 1,
           })
@@ -324,7 +339,7 @@ export function GexChart({
             color: GEXBOT.state.spotHistory,
             lineWidth: 2,
             priceLineVisible: true,
-            priceLineColor: GEXBOT.state.longGamma,
+            priceLineColor: GEXBOT.state.callGex,
             priceLineStyle: LineStyle.Solid,
             priceLineWidth: 1,
           });
@@ -421,7 +436,7 @@ export function GexChart({
   useEffect(() => {
     const series = mainSeriesRef.current;
     if (!series) return;
-    const desired = levelLines(state, oi, settings);
+    const desired = levelLines(state, gamma, oi, settings);
     primitiveRef.current?.setLevels(desired);
     const map = priceLinesRef.current;
     for (const [key, pl] of [...map]) {
@@ -448,7 +463,7 @@ export function GexChart({
         );
       }
     }
-  }, [state, oi, settings.chartType, settings.levels, settings.axisLabels]);
+  }, [state, gamma, oi, settings.chartType, settings.levels, settings.axisLabels]);
 
   // profile bars + priors dots
   useEffect(() => {
@@ -459,14 +474,22 @@ export function GexChart({
       sets.push({
         id: "state",
         rows: state.strikes.map(r => [r[0], r[1]] as [number, number]),
-        pos: GEXBOT.state.longGamma,
-        neg: GEXBOT.state.shortGamma,
+        pos: GEXBOT.state.callGex,
+        neg: GEXBOT.state.putGex,
         priors: settings.priors
           ? {
               rows: state.strikes.map(r => [r[0], r[3]] as [number, number[]]),
               colors: GEXBOT.state.priors,
             }
           : undefined,
+      });
+    if (settings.gammaBars && gamma)
+      sets.push({
+        id: "gamma",
+        rows: gamma.strikes.map(r => [r[0], r[1]] as [number, number]),
+        pos: GEXBOT.state.longGamma,
+        neg: GEXBOT.state.shortGamma,
+        dotsOnly: true,
       });
     if (settings.volBars && oi)
       sets.push({
@@ -485,7 +508,7 @@ export function GexChart({
     // classic priors (blue ramp) ride on the first enabled classic set —
     // the API's priors are volume-based
     if (settings.priors && oi) {
-      const classicSet = sets.find(s => s.pos !== GEXBOT.state.longGamma);
+      const classicSet = sets.find(s => s.id === "vol" || s.id === "oi");
       if (classicSet) {
         classicSet.priors = {
           rows: oi.strikes.map(r => [r[0], r[3]] as [number, number[]]),
@@ -497,9 +520,11 @@ export function GexChart({
     primitive.setData(sets);
   }, [
     state,
+    gamma,
     oi,
     settings.chartType,
     settings.stateBars,
+    settings.gammaBars,
     settings.volBars,
     settings.oiBars,
     settings.priors,
@@ -521,8 +546,8 @@ export function GexChart({
   };
 
   // ---- legend/status ----
-  const latest = [state, oi].filter(Boolean).sort((a, b) => b!.providerTs - a!.providerTs)[0];
-  const hasError = state?.status === "error" || oi?.status === "error";
+  const latest = [state, gamma, oi].filter(Boolean).sort((a, b) => b!.providerTs - a!.providerTs)[0];
+  const hasError = state?.status === "error" || gamma?.status === "error" || oi?.status === "error";
   const ageSec = latest ? Math.max(0, Date.now() / 1000 - latest.providerTs) : Infinity;
   const dotColor = hasError
     ? GEXBOT.state.candleDown
@@ -615,7 +640,7 @@ export function GexChart({
           <TooltipContent>Save chart as PNG</TooltipContent>
         </Tooltip>
       </div>
-      {!state && !oi && (
+      {!state && !gamma && !oi && (
         <div
           className="absolute inset-0 flex items-center justify-center font-mono text-xs"
           style={{ color: GEXBOT.textFaint }}

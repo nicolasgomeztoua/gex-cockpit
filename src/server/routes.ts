@@ -9,8 +9,10 @@ import {
   REPLAY_DATE,
   mockSpotHistory,
   mockZgHistory,
+  conversions,
   snapshots,
   subscribe,
+  subscribeConversions,
 } from "./poller";
 import { controlReplay, replayInitPayload, subscribeReplay } from "./replay";
 import type { InitPayload } from "../shared/types";
@@ -35,6 +37,7 @@ function initPayload(): InitPayload {
   if (REPLAY_DATE) return replayInitPayload();
   return {
     feeds: snapshots(),
+    conversions: conversions(),
     spotHistory: MOCK
       ? { NDX: mockSpotHistory("NDX"), QQQ: mockSpotHistory("QQQ"), NQ_NDX: mockSpotHistory("NQ_NDX") }
       : { NDX: spotHistory("NDX"), QQQ: spotHistory("QQQ"), NQ_NDX: spotHistory("NQ_NDX") },
@@ -115,6 +118,7 @@ export const api = new Hono()
 
       send("init", initPayload());
       unsubscribes.push(subscribe(snap => send("update", snap)));
+      unsubscribes.push(subscribeConversions(conversion => send("conversion", conversion)));
       unsubscribes.push(subscribeReplay(message => send(message.event, message.data)));
       heartbeat = setInterval(() => enqueue(() => stream.write(": hb\n\n")), 15_000);
 

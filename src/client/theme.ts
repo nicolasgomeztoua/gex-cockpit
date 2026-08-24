@@ -13,8 +13,10 @@ export const GEXBOT = {
   accentBlue: "#8ab4f8", // gexbot's active-toggle / segmented-control blue
 
   state: {
-    longGamma: "#4de3f2", // cyan — positive/long gamma (bars + major line)
-    shortGamma: "#a94de8", // purple — negative/short gamma (bars + major line)
+    callGex: "#4de3f2", // cyan — positive/call GEX imbalance
+    putGex: "#a94de8", // purple — negative/put GEX imbalance
+    longGamma: "#75f06a", // options-profile long gamma
+    shortGamma: "#ff4b4b", // options-profile short gamma
     spotHistory: "#ffffff",
     candleUp: "#26d467",
     candleDown: "#f63538",
@@ -46,7 +48,7 @@ export const GEXBOT = {
 // ---------------------------------------------------------------------------
 // Level metadata: single source for sidebar rows, chart lines, and alerts.
 
-export type LevelKey = "mlg" | "msg" | "zg" | "mpv" | "mnv" | "mpo" | "mno";
+export type LevelKey = "mlg" | "msg" | "mcg" | "mpg" | "zg" | "mpv" | "mnv" | "mpo" | "mno";
 
 export const LEVEL_META: Record<
   LevelKey,
@@ -54,6 +56,8 @@ export const LEVEL_META: Record<
 > = {
   mlg: { name: "Major Long Gamma", color: GEXBOT.state.longGamma, section: "state" },
   msg: { name: "Major Short Gamma", color: GEXBOT.state.shortGamma, section: "state" },
+  mcg: { name: "Major Call GEX", color: GEXBOT.state.callGex, section: "state" },
+  mpg: { name: "Major Put GEX", color: GEXBOT.state.putGex, section: "state" },
   zg: { name: "Zero Gamma", color: GEXBOT.classic.zeroGamma, section: "classic" },
   mpv: { name: "Major Positive Volume", color: GEXBOT.classic.majorPosVol, section: "classic" },
   mnv: { name: "Major Negative Volume", color: GEXBOT.classic.majorNegVol, section: "classic" },
@@ -97,7 +101,8 @@ export type TickerKey = "NDX" | "QQQ";
 
 export interface TickerSettings {
   chartType: "candles" | "line";
-  stateBars: boolean; // state gamma profile (cyan/purple)
+  stateBars: boolean; // State GEX Profile imbalance (cyan/purple)
+  gammaBars: boolean; // options-profile net gamma dots
   volBars: boolean; // classic GEX by volume (light green/salmon)
   oiBars: boolean; // classic GEX by OI (dark green/dark red)
   priors: boolean; // prior-snapshot dots on the profiles
@@ -117,6 +122,7 @@ const defaultLevel = (): LevelConfig => ({ line: true, label: false, alert: fals
 const defaultTicker = (): TickerSettings => ({
   chartType: "candles",
   stateBars: true,
+  gammaBars: true,
   volBars: false,
   oiBars: true,
   priors: true,
@@ -124,6 +130,8 @@ const defaultTicker = (): TickerSettings => ({
   levels: {
     mlg: defaultLevel(),
     msg: defaultLevel(),
+    mcg: defaultLevel(),
+    mpg: defaultLevel(),
     zg: defaultLevel(),
     mpv: defaultLevel(),
     mnv: defaultLevel(),

@@ -2,8 +2,10 @@ import { create } from "zustand";
 import type {
   FeedKey,
   FeedSnapshot,
+  FuturesConversion,
   InitPayload,
   ReplayStatus,
+  ConversionTicker,
   Ticker,
 } from "../../shared/types";
 
@@ -13,6 +15,7 @@ export interface StreamState {
   replay: ReplayStatus | null;
   historyRevision: number;
   feeds: Partial<Record<FeedKey, FeedSnapshot>>;
+  conversions: Partial<Record<ConversionTicker, FuturesConversion>>;
   /** [epoch sec, spot] per ticker, ascending */
   spotHistory: Record<Ticker, [number, number][]>;
   /** [epoch sec, zero gamma] per ticker, ascending */
@@ -25,6 +28,7 @@ export const useStreamStore = create<StreamState>(() => ({
   replay: null,
   historyRevision: 0,
   feeds: {},
+  conversions: {},
   spotHistory: { NDX: [], QQQ: [], NQ_NDX: [] },
   zgHistory: { NDX: [], QQQ: [], NQ_NDX: [] },
 }));
@@ -46,6 +50,7 @@ export function startStream(): void {
       mock: init.mock,
       replay: init.replay,
       feeds,
+      conversions: init.conversions,
       spotHistory: init.spotHistory,
       zgHistory: init.zgHistory,
       ...(historyRevision === undefined ? {} : { historyRevision }),
@@ -101,5 +106,10 @@ export function startStream(): void {
       }
       return { feeds, spotHistory, zgHistory };
     });
+  });
+
+  es.addEventListener("conversion", ev => {
+    const conversion = JSON.parse((ev as MessageEvent).data) as FuturesConversion;
+    set(s => ({ conversions: { ...s.conversions, [conversion.ticker]: conversion } }));
   });
 }

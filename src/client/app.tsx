@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { GexChart } from "./GexChart";
 import { Sidebar } from "./Sidebar";
@@ -8,27 +8,8 @@ import { useLevelAlerts } from "./alerts/useLevelAlerts";
 import { hydrateSettings, useSettingsStore } from "./stores/settingsStore";
 import { startStream, useStreamStore } from "./stores/streamStore";
 import { useUiStore } from "./stores/uiStore";
-import type { FeedSnapshot, StrikeRow } from "../shared/types";
-
-/** Rescale a snapshot's price fields (spot/strikes/majors) by `r`. */
-function scaleSnapshot(s: FeedSnapshot, r: number): FeedSnapshot {
-  return {
-    ...s,
-    spot: s.spot * r,
-    majors: {
-      posVol: s.majors.posVol * r,
-      negVol: s.majors.negVol * r,
-      posOI: s.majors.posOI * r,
-      negOI: s.majors.negOI * r,
-      zeroGamma: s.majors.zeroGamma ? s.majors.zeroGamma * r : s.majors.zeroGamma,
-    },
-    // priors are GEX values, not prices — only the strike is rescaled
-    strikes: s.strikes.map(([k, v, o, p]) => [k * r, v, o, p] as StrikeRow),
-  };
-}
-
-const scaleSeries = (series: [number, number][], r: number) =>
-  series.map(([t, v]) => [t, v * r] as [number, number]);
+import { convertSeries, convertSnapshot } from "../shared/conversion";
+import type { FeedKey, FeedSnapshot } from "../shared/types";
 
 /** Expand button that floats over the charts when the sidebar is collapsed. */
 function CollapsedTrigger() {
@@ -51,54 +32,81 @@ function App() {
     hydrateSettings();
   }, []);
 
-  const nqAvailable = !!s.feeds["NQ_NDX:state"];
+  const ndxConversion = s.conversions.NDX;
+  const qqqConversion = s.conversions.QQQ;
+  const nqAvailable = !!ndxConversion && !!qqqConversion;
   const useNq = settings.unit === "nq" && nqAvailable;
 
-  // The QQQ→NQ ratio is frozen when NQ mode is entered: re-deriving it every
-  // tick would retroactively rebase the whole history each update.
-  const ratioRef = useRef<number | undefined>(undefined);
-  const qqqSpot = s.feeds["QQQ:state"]?.spot;
-  const nqSpot = s.feeds["NQ_NDX:state"]?.spot;
-  if (useNq && ratioRef.current === undefined && qqqSpot && nqSpot) {
-    ratioRef.current = nqSpot / qqqSpot;
-  }
-  if (!useNq) ratioRef.current = undefined;
-  const ratio = useNq ? ratioRef.current : undefined;
+  const rawNdxState = s.feeds["NDX:state"];
+  const rawNdxGamma = s.feeds["NDX:gamma"];
+  const rawNdxOi = s.feeds["NDX:oi"];
+  const ndxState = useMemo(
+    () => (useNq && ndxConversion && rawNdxState ? convertSnapshot(rawNdxState, ndxConversion) : rawNdxState),
+    [rawNdxState, useNq, ndxConversion],
+  );
+  const ndxGamma = useMemo(
+    () => (useNq && ndxConversion && rawNdxGamma ? convertSnapshot(rawNdxGamma, ndxConversion) : rawNdxGamma),
+    [rawNdxGamma, useNq, ndxConversion],
+  );
+  const ndxOi = useMemo(
+    () => (useNq && ndxConversion && rawNdxOi ? convertSnapshot(rawNdxOi, ndxConversion) : rawNdxOi),
+    [rawNdxOi, useNq, ndxConversion],
+  );
+  const ndxSeries = useMemo(
+    () => (useNq && ndxConversion ? convertSeries(s.spotHistory.NDX, ndxConversion) : s.spotHistory.NDX),
+    [s.spotHistory.NDX, useNq, ndxConversion],
+  );
+  const ndxZg = useMemo(
+    () => (useNq && ndxConversion ? convertSeries(s.zgHistory.NDX, ndxConversion) : s.zgHistory.NDX),
+    [s.zgHistory.NDX, useNq, ndxConversion],
+  );
 
-  // NDX: native NQ_NDX feed in NQ units
-  const ndxState = useNq ? s.feeds["NQ_NDX:state"] : s.feeds["NDX:state"];
-  const ndxOi = useNq ? s.feeds["NQ_NDX:oi"] : s.feeds["NDX:oi"];
-  const ndxSeries = useNq ? s.spotHistory.NQ_NDX : s.spotHistory.NDX;
-  const ndxZg = useNq ? s.zgHistory.NQ_NDX : s.zgHistory.NDX;
-
-  // QQQ: ratio-approximated in NQ units (memoized so unrelated updates don't
-  // produce fresh objects and needlessly rerun chart effects)
   const rawQqqState = s.feeds["QQQ:state"];
+  const rawQqqGamma = s.feeds["QQQ:gamma"];
   const rawQqqOi = s.feeds["QQQ:oi"];
   const qqqState = useMemo(
-    () => (ratio && rawQqqState ? scaleSnapshot(rawQqqState, ratio) : rawQqqState),
-    [rawQqqState, ratio],
+    () => (useNq && qqqConversion && rawQqqState ? convertSnapshot(rawQqqState, qqqConversion) : rawQqqState),
+    [rawQqqState, useNq, qqqConversion],
+  );
+  const qqqGamma = useMemo(
+    () => (useNq && qqqConversion && rawQqqGamma ? convertSnapshot(rawQqqGamma, qqqConversion) : rawQqqGamma),
+    [rawQqqGamma, useNq, qqqConversion],
   );
   const qqqOi = useMemo(
-    () => (ratio && rawQqqOi ? scaleSnapshot(rawQqqOi, ratio) : rawQqqOi),
-    [rawQqqOi, ratio],
+    () => (useNq && qqqConversion && rawQqqOi ? convertSnapshot(rawQqqOi, qqqConversion) : rawQqqOi),
+    [rawQqqOi, useNq, qqqConversion],
   );
   const qqqSeries = useMemo(
-    () => (ratio ? scaleSeries(s.spotHistory.QQQ, ratio) : s.spotHistory.QQQ),
-    [s.spotHistory.QQQ, ratio],
+    () => (useNq && qqqConversion ? convertSeries(s.spotHistory.QQQ, qqqConversion) : s.spotHistory.QQQ),
+    [s.spotHistory.QQQ, useNq, qqqConversion],
   );
   const qqqZg = useMemo(
-    () => (ratio ? scaleSeries(s.zgHistory.QQQ, ratio) : s.zgHistory.QQQ),
-    [s.zgHistory.QQQ, ratio],
+    () => (useNq && qqqConversion ? convertSeries(s.zgHistory.QQQ, qqqConversion) : s.zgHistory.QQQ),
+    [s.zgHistory.QQQ, useNq, qqqConversion],
   );
 
   const historyKey = `${useNq ? "nq" : "spot"}:${s.historyRevision}`;
 
+  const displayedFeeds = useMemo(() => {
+    const feeds: Partial<Record<FeedKey, FeedSnapshot>> = { ...s.feeds };
+    for (const [key, value] of [
+      ["NDX:state", ndxState],
+      ["NDX:gamma", ndxGamma],
+      ["NDX:oi", ndxOi],
+      ["QQQ:state", qqqState],
+      ["QQQ:gamma", qqqGamma],
+      ["QQQ:oi", qqqOi],
+    ] as const) {
+      if (value) feeds[key] = value;
+    }
+    return feeds;
+  }, [s.feeds, ndxState, ndxGamma, ndxOi, qqqState, qqqGamma, qqqOi]);
+
   // alerts run on the same displayed-unit data the charts show
   useLevelAlerts(
     [
-      { label: "NDX", ticker: "NDX", state: ndxState, oi: ndxOi },
-      { label: "QQQ", ticker: "QQQ", state: qqqState, oi: qqqOi },
+      { label: "NDX", ticker: "NDX", state: ndxState, gamma: ndxGamma, oi: ndxOi },
+      { label: "QQQ", ticker: "QQQ", state: qqqState, gamma: qqqGamma, oi: qqqOi },
     ],
     settings,
   );
@@ -109,9 +117,10 @@ function App() {
         <main className="relative flex min-w-0 flex-1 flex-col">
           <GexChart
             label="NDX"
-            unitTag={useNq ? "NQ pts" : undefined}
+            unitTag={useNq ? ndxConversion?.futureContract : undefined}
             historyKey={`ndx:${historyKey}`}
             state={ndxState}
+            gamma={ndxGamma}
             oi={ndxOi}
             spotSeries={ndxSeries}
             zgSeries={ndxZg}
@@ -120,9 +129,10 @@ function App() {
           <div className="h-px shrink-0 bg-border" />
           <GexChart
             label="QQQ"
-            unitTag={useNq ? "≈ NQ pts" : undefined}
+            unitTag={useNq ? qqqConversion?.futureContract : undefined}
             historyKey={`qqq:${historyKey}`}
             state={qqqState}
+            gamma={qqqGamma}
             oi={qqqOi}
             spotSeries={qqqSeries}
             zgSeries={qqqZg}
@@ -133,7 +143,7 @@ function App() {
         <Sidebar
           settings={settings}
           onChange={setSettings}
-          feeds={s.feeds}
+          feeds={displayedFeeds}
           connected={s.connected}
           mock={s.mock}
           replay={s.replay}

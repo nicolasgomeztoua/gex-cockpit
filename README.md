@@ -42,6 +42,7 @@ never put the GexBot key in a `VITE_` variable.
 | --- | --- | --- |
 | `GEXBOT_API_KEY` | — (required) | GexBot API key, server-side only |
 | `POLL_MS` | `10000` | Poll interval; responses are deduped on the provider timestamp |
+| `GEX_AGGREGATION` | `zero` | `full` = 90d, `zero` = latest expiry, `one` = next expiry |
 | `PORT` | `4321` | Listen port (always bound to `127.0.0.1`) |
 | `VITE_PORT` | `5173` | Vite dev-server port (`bun run dev` only) |
 | `DB_PATH` | `data/gex-cockpit.db` | SQLite database file |
@@ -64,7 +65,7 @@ src/
     Sidebar.tsx       gexbot-style settings panel
     theme.ts          exact gexbot colors + persisted layer settings
     components/ui/    shadcn-style primitives (Radix)
-  shared/    types shared by server and client
+  shared/    types and official futures-price conversion shared by server and client
 docs/        gexbot visual reference, original project brief
 scripts/     ui-probe.ts — headless toggle/screenshot probe
 drizzle/     generated baseline migration (`IF NOT EXISTS` for old DB compatibility)
@@ -84,8 +85,13 @@ vite.config.ts  React + Tailwind v4, build output, and dev API proxy
 
 ## Data notes
 
-- Feeds: `{NDX,QQQ,NQ_NDX}/{state,classic}/gex_full`. The `NQ_NDX` ticker powers the
-  "nq future" unit toggle natively; QQQ in NQ units is a ratio approximation, labeled `≈`.
+- Feeds: `{NDX,QQQ}` State GEX Profile, Options Gamma, and Classic GEX. The default
+  `zero` aggregation matches GexBot's **latest** button.
+- The "nq future" toggle uses GexBot's documented conversion endpoint for both
+  `NDX → NQ` (additive) and `QQQ → NQ` (affine):
+  `future = multiplier × source + additive`. Parameters refresh every 15 minutes.
+- State GEX Profile call/put imbalance and Options Profile long/short gamma are
+  separate feeds and separate chart layers; they are not relabeled as each other.
 - Spot is GexBot context data, not exchange OHLC — candles are 1-minute buckets of polled ticks.
 - History lands in `data/gex-cockpit.db` (SQLite, gitignored). Mock mode never writes.
 - Strike-row index semantics (index 1 = volume/state value, index 2 = OI value) were

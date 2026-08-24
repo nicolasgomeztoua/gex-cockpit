@@ -14,13 +14,15 @@ import type {
 import { GEXBOT } from "../theme";
 
 /** which profile a bar set / level line belongs to */
-export type ProfileId = "state" | "vol" | "oi";
+export type ProfileId = "state" | "gamma" | "vol" | "oi";
 
 export interface BarSet {
   id: ProfileId;
   rows: [number, number][]; // [strike, value]
   pos: string;
   neg: string;
+  /** Plot each current value as a point at its scaled x-position. */
+  dotsOnly?: boolean;
   /** prior-snapshot values per strike, rendered as dots (color per prior index) */
   priors?: { rows: [number, number[]][]; colors: readonly string[] };
   /** draw the top-edge value ticks for this set (first enabled set only) */
@@ -140,7 +142,7 @@ export class GexProfilePrimitive implements ISeriesPrimitive<Time> {
                 const w = (Math.abs(value) / maxAbs) * maxWidth;
                 const yTop = y - stackH / 2 + i * subH;
                 ctx.fillStyle = value >= 0 ? set.pos : set.neg;
-                if (w < 8) {
+                if (set.dotsOnly || w < 8) {
                   // small values render as dots at their bar-length position (gexbot look)
                   ctx.fillRect(mediaSize.width - w - 2, yTop + subH / 2 - 1.25, 2.5, 2.5);
                 } else {
@@ -350,7 +352,7 @@ export class VerticalNowLinePrimitive implements ISeriesPrimitive<Time> {
           const x = param.chart.timeScale().timeToCoordinate(self._time);
           if (x === null) return; // scrolled out of view
           target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
-            ctx.strokeStyle = GEXBOT.state.longGamma;
+            ctx.strokeStyle = GEXBOT.state.callGex;
             ctx.globalAlpha = 0.45;
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 4]);

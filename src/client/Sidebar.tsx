@@ -448,20 +448,31 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
       <SidebarContent>
         {view === "main" && (
           <>
-            <Section title="volume" color={S.longGamma}>
+            <Section title="state" color={S.callGex}>
               {(() => {
-                const snap = feeds[`${scope}:state`];
-                if (!snap) return <div className="px-1.5 text-[12px] text-muted-foreground/60">waiting…</div>;
+                const gamma = feeds[`${scope}:gamma`];
+                const profile = feeds[`${scope}:state`];
+                if (!gamma && !profile)
+                  return <div className="px-1.5 text-[12px] text-muted-foreground/60">waiting…</div>;
                 return (
                   <>
-                    <div className="flex items-baseline px-1.5 py-[3px] text-[13px] tabular-nums">
-                      <span style={{ color: S.longGamma }}>major long gamma</span>
-                      <span className="ml-auto text-foreground">{fmtPrice(snap.majors.posVol)}</span>
-                    </div>
-                    <div className="flex items-baseline px-1.5 py-[3px] text-[13px] tabular-nums">
-                      <span style={{ color: S.shortGamma }}>major short gamma</span>
-                      <span className="ml-auto text-foreground">{fmtPrice(snap.majors.negVol)}</span>
-                    </div>
+                    {gamma && (
+                      <>
+                        <div className="flex items-baseline px-1.5 py-[3px] text-[13px] tabular-nums">
+                          <span style={{ color: S.longGamma }}>major long gamma</span>
+                          <span className="ml-auto text-foreground">{fmtPrice(gamma.majors.posVol)}</span>
+                        </div>
+                        <div className="flex items-baseline px-1.5 py-[3px] text-[13px] tabular-nums">
+                          <span style={{ color: S.shortGamma }}>major short gamma</span>
+                          <span className="ml-auto text-foreground">{fmtPrice(gamma.majors.negVol)}</span>
+                        </div>
+                      </>
+                    )}
+                    {profile && (
+                      <div className="px-1.5 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        GEX profile · {profile.aggregation === "zero" ? "latest" : profile.aggregation === "one" ? "next" : "90d"}
+                      </div>
+                    )}
                   </>
                 );
               })()}
@@ -498,10 +509,16 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
                 <LevelRow key={k} levelKey={k} cfg={ts.levels[k]} onChange={p => setLevel(k, p)} />
               ))}
               <Row
-                label="State Gamma (bars)"
-                color={S.shortGamma}
+                label="GEX Profile (bars)"
+                color={S.callGex}
                 on={ts.stateBars}
                 onChange={v => setTicker({ stateBars: v })}
+              />
+              <Row
+                label="Options Gamma (dots)"
+                color={S.longGamma}
+                on={ts.gammaBars}
+                onChange={v => setTicker({ gammaBars: v })}
               />
             </Section>
 
@@ -524,7 +541,7 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
             </Section>
 
             <Section title="chart" color={C.zeroGamma}>
-              {(ts.stateBars || ts.volBars || ts.oiBars) && (
+              {(ts.stateBars || ts.gammaBars || ts.volBars || ts.oiBars) && (
                 <Row
                   label="Priors on hover (1–30m)"
                   color={C.priors[2]}

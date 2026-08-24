@@ -1,5 +1,7 @@
 export type Ticker = "NDX" | "QQQ" | "NQ_NDX";
-export type FeedKind = "state" | "oi";
+export type FeedKind = "state" | "gamma" | "oi";
+export type AggregationPeriod = "full" | "zero" | "one";
+export type ConversionTicker = "NDX" | "QQQ";
 
 /** `${ticker}:${kind}` */
 export type FeedKey = `${Ticker}:${FeedKind}`;
@@ -22,6 +24,8 @@ export interface FeedSnapshot {
   feed: FeedKey;
   ticker: Ticker;
   kind: FeedKind;
+  /** full = 90d aggregate, zero = nearest expiry, one = next expiry */
+  aggregation: AggregationPeriod;
   /** provider timestamp, epoch seconds */
   providerTs: number;
   /** local fetch time, epoch ms */
@@ -35,6 +39,16 @@ export interface FeedSnapshot {
   strikes: StrikeRow[];
   status: "live" | "error";
   error?: string;
+}
+
+export interface FuturesConversion {
+  ticker: ConversionTicker;
+  future: "NQ";
+  futureContract: string;
+  /** futuresPrice = multiplier * sourcePrice + additive */
+  multiplier: number;
+  additive: number;
+  fetchedAt: number;
 }
 
 export interface SpotTick {
@@ -56,6 +70,7 @@ export interface ReplayStatus {
 
 export interface InitPayload {
   feeds: FeedSnapshot[];
+  conversions: Partial<Record<ConversionTicker, FuturesConversion>>;
   spotHistory: Record<Ticker, [number, number][]>; // [epoch sec, spot]
   /** zero-gamma level through the session, per ticker: [epoch sec, zg] */
   zgHistory: Record<Ticker, [number, number][]>;

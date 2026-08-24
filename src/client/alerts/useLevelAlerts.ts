@@ -9,6 +9,7 @@ export interface AlertChartInput {
   label: string;
   ticker: TickerKey;
   state?: FeedSnapshot;
+  gamma?: FeedSnapshot;
   oi?: FeedSnapshot;
 }
 
@@ -18,11 +19,20 @@ const REPEAT_SAFETY_CAP = 20;
 const fmtPrice = (v: number) =>
   Math.abs(v) >= 3000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(2);
 
-function levelPrice(key: LevelKey, state?: FeedSnapshot, oi?: FeedSnapshot): number | null {
+function levelPrice(
+  key: LevelKey,
+  state?: FeedSnapshot,
+  gamma?: FeedSnapshot,
+  oi?: FeedSnapshot,
+): number | null {
   switch (key) {
     case "mlg":
-      return state?.majors.posVol || null;
+      return gamma?.majors.posVol || null;
     case "msg":
+      return gamma?.majors.negVol || null;
+    case "mcg":
+      return state?.majors.posVol || null;
+    case "mpg":
       return state?.majors.negVol || null;
     case "zg":
       return oi?.majors.zeroGamma ?? null;
@@ -110,7 +120,7 @@ export function useLevelAlerts(charts: AlertChartInput[], settings: LayerSetting
       for (const key of Object.keys(LEVEL_META) as LevelKey[]) {
         if (!levels[key].alert) continue;
         const machineKey = `${chart.label}:${key}`;
-        const price = levelPrice(key, chart.state, chart.oi);
+        const price = levelPrice(key, chart.state, chart.gamma, chart.oi);
         if (price === null) {
           machines.current.delete(machineKey);
           continue;

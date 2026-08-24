@@ -92,7 +92,7 @@ export function replayInitPayload(): InitPayload {
     }
   }
 
-  return { feeds: snapshots(), spotHistory, zgHistory, mock: false, replay: status };
+  return { feeds: snapshots(), conversions: {}, spotHistory, zgHistory, mock: false, replay: status };
 }
 
 export function controlReplay(action: string, value?: number): ReplayStatus {
