@@ -92,6 +92,9 @@ vite.config.ts  React + Tailwind v4, build output, and dev API proxy
   `future = multiplier × source + additive`. Parameters refresh every 15 minutes.
 - State GEX Profile call/put imbalance and Options Profile long/short gamma are
   separate feeds and separate chart layers; they are not relabeled as each other.
+- Normal GexBot requests are serialized on one warmed connection and retain the
+  1-second timeout. A single cold-start request may use up to 3 seconds because
+  establishing the provider connection is measurably slower than one second.
 - Spot is GexBot context data, not exchange OHLC — candles are 1-minute buckets of polled ticks.
 - History lands in `data/gex-cockpit.db` (SQLite, gitignored). Mock mode never writes.
 - Strike-row index semantics (index 1 = volume/state value, index 2 = OI value) were

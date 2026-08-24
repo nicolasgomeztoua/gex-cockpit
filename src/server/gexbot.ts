@@ -9,6 +9,7 @@ import type {
   Ticker,
 } from "../shared/types";
 import { FETCH_TIMEOUT_MS } from "./poll-retry";
+import { SerialTaskQueue } from "./serial-request";
 
 // The rendered docs show api.gexbot.com/{ticker}/{package}/{period}. GexBot's
 // versioned host exposes the same data with category names (gex_zero, etc.) and
@@ -17,6 +18,8 @@ import { FETCH_TIMEOUT_MS } from "./poll-retry";
 const CHART_BASE_URL = "https://api.gex.bot/v2";
 const CONVERSION_URL = "https://api.gex.bot/v2/futures/conversion";
 const USER_AGENT = "gex-cockpit/0.2.0 (local)";
+const STARTUP_TIMEOUT_MS = 3_000;
+const requestQueue = new SerialTaskQueue();
 
 const API_KEY = process.env.GEXBOT_API_KEY;
 
@@ -90,27 +93,54 @@ function feedUrl(ticker: Ticker, kind: FeedKind): string {
   return `${CHART_BASE_URL}/${ticker}/${pkg}/gex_${GEX_AGGREGATION}`;
 }
 
+async function requestJson<T>(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<T> {
+  return requestQueue.run(async () => {
+    const res = await fetch(url, {
+      headers: headers(),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as T;
+  });
+}
+
+/**
+ * One cold TLS request is measurably slower than one second on this machine.
+ * Give only this bootstrap call a three-second allowance; every normal feed
+ * and conversion request still uses the required one-second timeout.
+ */
+export async function warmGexbotConnection(): Promise<void> {
+  await requestJson<RawConversion>(
+    `${CONVERSION_URL}?ticker=QQQ&future=NQ&model=affine`,
+    STARTUP_TIMEOUT_MS,
+  );
+}
+
 export async function fetchFeed(ticker: Ticker, kind: FeedKind): Promise<FeedSnapshot> {
   const url = feedUrl(ticker, kind);
-  const res = await fetch(url, {
-    headers: headers(),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`${ticker}/${kind}: HTTP ${res.status}`);
-  if (kind === "gamma") return parseGammaFeed(ticker, (await res.json()) as RawGamma);
-  const raw = (await res.json()) as RawGexFull;
-  return parseGexFeed(ticker, kind, raw);
+  try {
+    if (kind === "gamma") return parseGammaFeed(ticker, await requestJson<RawGamma>(url));
+    return parseGexFeed(ticker, kind, await requestJson<RawGexFull>(url));
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("HTTP ")) {
+      throw new Error(`${ticker}/${kind}: ${error.message}`);
+    }
+    throw error;
+  }
 }
 
 export async function fetchFuturesConversion(ticker: ConversionTicker): Promise<FuturesConversion> {
   const model = ticker === "QQQ" ? "affine" : "additive";
   const url = `${CONVERSION_URL}?ticker=${ticker}&future=NQ&model=${model}`;
-  const res = await fetch(url, {
-    headers: headers(),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`${ticker}/NQ conversion: HTTP ${res.status}`);
-  const raw = (await res.json()) as RawConversion;
+  let raw: RawConversion;
+  try {
+    raw = await requestJson<RawConversion>(url);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("HTTP ")) {
+      throw new Error(`${ticker}/NQ conversion: ${error.message}`);
+    }
+    throw error;
+  }
   if (
     !raw.future_contract
     || !Number.isFinite(raw.multiplier)

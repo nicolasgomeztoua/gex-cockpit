@@ -10,7 +10,9 @@ export {};
 const PORT = process.env.PORT ?? "4321";
 const VITE_PORT = process.env.VITE_PORT ?? "5173";
 
-const backend = Bun.spawn(["bun", "--hot", "src/server/index.ts"], {
+// Hard restart the backend on edits. `--hot` preserves process state, so its
+// infinite poll loops survive module reloads and multiply after every save.
+const backend = Bun.spawn(["bun", "--watch", "src/server/index.ts"], {
   env: { ...process.env, PORT, NODE_ENV: "development" },
   stdout: "inherit",
   stderr: "inherit",

@@ -3,6 +3,7 @@ import {
   fetchFeed,
   fetchFuturesConversion,
   GEX_AGGREGATION,
+  warmGexbotConnection,
 } from "./gexbot";
 import { persistSnapshot } from "./db";
 import { PollRetryState, formatRetryDelay } from "./poll-retry";
@@ -158,6 +159,29 @@ async function conversionLoop(ticker: ConversionTicker): Promise<void> {
   }
 }
 
+async function bootstrap(start: () => void): Promise<void> {
+  const retry = new PollRetryState();
+  console.info("[poller] warming GexBot connection (one cold-start request may use 3s)");
+  while (true) {
+    try {
+      await warmGexbotConnection();
+      const recoveredFailures = retry.recovered();
+      console.info(
+        `[poller] connection ready; normal requests use 1.0s timeout${recoveredFailures ? ` (recovered after ${recoveredFailures} ${recoveredFailures === 1 ? "failure" : "failures"})` : ""}`,
+      );
+      start();
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const decision = retry.failed();
+      console.error(
+        `[poller] startup connection: ${msg} (failure ${decision.failureCount}; retrying in ${formatRetryDelay(decision.delayMs)})`,
+      );
+      await Bun.sleep(decision.delayMs);
+    }
+  }
+}
+
 export function startPoller(): void {
   if (REPLAY_DATE) {
     console.log(`[poller] REPLAY ${REPLAY_DATE} — recorded session, nothing persisted`);
@@ -166,16 +190,20 @@ export function startPoller(): void {
   }
   assertGexbotApiKey();
   if (MOCK) {
-    for (const ticker of ["NDX", "QQQ"] as ConversionTicker[]) void conversionLoop(ticker);
     console.log("[poller] MOCK mode — synthetic session, nothing persisted");
-    void startMock();
+    void bootstrap(() => {
+      for (const ticker of ["NDX", "QQQ"] as ConversionTicker[]) void conversionLoop(ticker);
+      void startMock();
+    });
     return;
   }
   console.log(
     `[poller] polling ${GEX_AGGREGATION} profiles every ${POLL_MS}ms (set POLL_MS/GEX_AGGREGATION to change)`,
   );
-  for (const ticker of ["NDX", "QQQ"] as ConversionTicker[]) void conversionLoop(ticker);
-  for (const f of FEEDS) void pollLoop(f.ticker, f.kind);
+  void bootstrap(() => {
+    for (const ticker of ["NDX", "QQQ"] as ConversionTicker[]) void conversionLoop(ticker);
+    for (const f of FEEDS) void pollLoop(f.ticker, f.kind);
+  });
 }
 
 // ---------------------------------------------------------------------------

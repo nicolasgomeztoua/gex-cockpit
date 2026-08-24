@@ -19,5 +19,7 @@ const server = Bun.serve({
   fetch: app.fetch,
 });
 
+// The poller bootstraps its provider connection after the local server binds,
+// so health/SSE remain available while an offline provider is retrying.
 startPoller();
 console.log(`GEX Cockpit → ${server.url}`);
