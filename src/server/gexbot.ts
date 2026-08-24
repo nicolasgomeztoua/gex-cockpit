@@ -23,12 +23,24 @@ const requestQueue = new SerialTaskQueue();
 
 const API_KEY = process.env.GEXBOT_API_KEY;
 
-const requestedAggregation = process.env.GEX_AGGREGATION ?? "zero";
-if (!["full", "zero", "one"].includes(requestedAggregation)) {
-  throw new Error("GEX_AGGREGATION must be full, zero, or one");
+function aggregationEnv(name: string, fallback: AggregationPeriod): AggregationPeriod {
+  const requested = process.env[name] ?? process.env.GEX_AGGREGATION ?? fallback;
+  if (!["full", "zero", "one"].includes(requested)) {
+    throw new Error(`${name} must be full, zero, or one`);
+  }
+  return requested as AggregationPeriod;
 }
-/** Matches GexBot's latest button by default. */
-export const GEX_AGGREGATION = requestedAggregation as AggregationPeriod;
+
+/** State defaults to GexBot's latest button; Classic OI defaults to its 90d view. */
+export const GEX_STATE_AGGREGATION = aggregationEnv("GEX_STATE_AGGREGATION", "zero");
+export const GEX_OI_AGGREGATION = aggregationEnv("GEX_OI_AGGREGATION", "full");
+export const GEX_GAMMA_AGGREGATION = GEX_STATE_AGGREGATION === "one" ? "one" : "zero";
+
+export function aggregationFor(kind: FeedKind): AggregationPeriod {
+  if (kind === "state") return GEX_STATE_AGGREGATION;
+  if (kind === "oi") return GEX_OI_AGGREGATION;
+  return GEX_GAMMA_AGGREGATION;
+}
 
 interface RawGexFull {
   timestamp: number;
@@ -84,13 +96,13 @@ export function assertGexbotApiKey(): void {
 }
 
 function feedUrl(ticker: Ticker, kind: FeedKind): string {
+  const aggregation = aggregationFor(kind);
   if (kind === "gamma") {
     // GexBot publishes options-profile Greeks for nearest/next expiry only.
-    const expiry = GEX_AGGREGATION === "one" ? "one" : "zero";
-    return `${CHART_BASE_URL}/${ticker}/state/gamma_${expiry}`;
+    return `${CHART_BASE_URL}/${ticker}/state/gamma_${aggregation}`;
   }
   const pkg = kind === "state" ? "state" : "classic";
-  return `${CHART_BASE_URL}/${ticker}/${pkg}/gex_${GEX_AGGREGATION}`;
+  return `${CHART_BASE_URL}/${ticker}/${pkg}/gex_${aggregation}`;
 }
 
 async function requestJson<T>(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<T> {
@@ -163,11 +175,12 @@ export function parseGexFeed(
   kind: Exclude<FeedKind, "gamma">,
   raw: RawGexFull,
 ): FeedSnapshot {
+  const aggregation = aggregationFor(kind);
   return {
     feed: `${ticker}:${kind}` as FeedKey,
     ticker,
     kind,
-    aggregation: GEX_AGGREGATION,
+    aggregation,
     providerTs: raw.timestamp,
     fetchedAt: Date.now(),
     spot: raw.spot,
@@ -189,12 +202,11 @@ export function parseGexFeed(
 }
 
 export function parseGammaFeed(ticker: Ticker, raw: RawGamma): FeedSnapshot {
-  const aggregation = GEX_AGGREGATION === "one" ? "one" : "zero";
   return {
     feed: `${ticker}:gamma` as FeedKey,
     ticker,
     kind: "gamma",
-    aggregation,
+    aggregation: GEX_GAMMA_AGGREGATION,
     providerTs: raw.timestamp,
     fetchedAt: Date.now(),
     spot: raw.spot,

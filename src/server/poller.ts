@@ -2,7 +2,8 @@ import {
   assertGexbotApiKey,
   fetchFeed,
   fetchFuturesConversion,
-  GEX_AGGREGATION,
+  GEX_OI_AGGREGATION,
+  GEX_STATE_AGGREGATION,
   warmGexbotConnection,
 } from "./gexbot";
 import { persistSnapshot } from "./db";
@@ -198,7 +199,7 @@ export function startPoller(): void {
     return;
   }
   console.log(
-    `[poller] polling ${GEX_AGGREGATION} profiles every ${POLL_MS}ms (set POLL_MS/GEX_AGGREGATION to change)`,
+    `[poller] polling State ${GEX_STATE_AGGREGATION} + OI ${GEX_OI_AGGREGATION} every ${POLL_MS}ms (set POLL_MS/GEX_STATE_AGGREGATION/GEX_OI_AGGREGATION to change)`,
   );
   void bootstrap(() => {
     for (const ticker of ["NDX", "QQQ"] as ConversionTicker[]) void conversionLoop(ticker);

@@ -42,7 +42,9 @@ never put the GexBot key in a `VITE_` variable.
 | --- | --- | --- |
 | `GEXBOT_API_KEY` | — (required) | GexBot API key, server-side only |
 | `POLL_MS` | `10000` | Poll interval; responses are deduped on the provider timestamp |
-| `GEX_AGGREGATION` | `zero` | `full` = 90d, `zero` = latest expiry, `one` = next expiry |
+| `GEX_STATE_AGGREGATION` | `zero` | State profile: `zero` = latest expiry, `one` = next expiry, `full` = 90d |
+| `GEX_OI_AGGREGATION` | `full` | Classic/Open Interest profile: `full` = 90d, `zero` = latest expiry, `one` = next expiry |
+| `GEX_AGGREGATION` | — | Legacy fallback that sets both profiles when a per-profile variable is absent |
 | `PORT` | `4321` | Listen port (always bound to `127.0.0.1`) |
 | `VITE_PORT` | `5173` | Vite dev-server port (`bun run dev` only) |
 | `DB_PATH` | `data/gex-cockpit.db` | SQLite database file |
@@ -85,8 +87,9 @@ vite.config.ts  React + Tailwind v4, build output, and dev API proxy
 
 ## Data notes
 
-- Feeds: `{NDX,QQQ}` State GEX Profile, Options Gamma, and Classic GEX. The default
-  `zero` aggregation matches GexBot's **latest** button.
+- Feeds: `{NDX,QQQ}` State GEX Profile, Options Gamma, and Classic/Open Interest
+  GEX. By default, State and Options Gamma use GexBot's **latest** expiry while
+  Open Interest uses its **90d** aggregate.
 - The "nq future" toggle uses GexBot's documented conversion endpoint for both
   `NDX → NQ` (additive) and `QQQ → NQ` (affine):
   `future = multiplier × source + additive`. Parameters refresh every 15 minutes.
