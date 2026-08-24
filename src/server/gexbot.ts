@@ -1,4 +1,5 @@
 import type { FeedKind, FeedKey, FeedSnapshot, StrikeRow, Ticker } from "../shared/types";
+import { FETCH_TIMEOUT_MS } from "./poll-retry";
 
 const BASE_URL = "https://api.gex.bot/v2";
 const USER_AGENT = "gex-cockpit/0.2.0 (local)";
@@ -39,7 +40,7 @@ export async function fetchFeed(ticker: Ticker, kind: FeedKind): Promise<FeedSna
       "User-Agent": USER_AGENT,
       Accept: "application/json",
     },
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`${ticker}/${kind}: HTTP ${res.status}`);
   const raw = (await res.json()) as RawGexFull;

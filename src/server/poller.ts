@@ -1,9 +1,9 @@
 import { fetchFeed } from "./gexbot";
 import { persistSnapshot } from "./db";
+import { PollRetryState, formatRetryDelay } from "./poll-retry";
 import type { FeedKey, FeedKind, FeedSnapshot, StrikeRow, Ticker } from "../shared/types";
 
 const POLL_MS = Number(process.env.POLL_MS ?? 10_000);
-const MAX_BACKOFF_MS = 5 * 60_000;
 /** MOCK=1: run a synthetic session off one real snapshot — nothing is persisted. */
 export const REPLAY_DATE = process.env.REPLAY?.trim() || null;
 const MOCK_REQUESTED = !!process.env.MOCK && process.env.MOCK !== "0";
@@ -55,6 +55,7 @@ function emit(s: FeedSnapshot): void {
 
 async function pollLoop(ticker: Ticker, kind: FeedKind): Promise<void> {
   const key = `${ticker}:${kind}` as FeedKey;
+  const retry = new PollRetryState();
   let delay = POLL_MS;
   while (true) {
     try {
@@ -68,10 +69,20 @@ async function pollLoop(ticker: Ticker, kind: FeedKind): Promise<void> {
         if (!MOCK) persistSnapshot(snap);
         emit(snap);
       }
+      const recoveredFailures = retry.recovered();
+      if (recoveredFailures > 0) {
+        console.info(
+          `[poller] ${key}: recovered after ${recoveredFailures} consecutive ${recoveredFailures === 1 ? "failure" : "failures"}`,
+        );
+      }
       delay = POLL_MS;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[poller] ${key}: ${msg}`);
+      const decision = retry.failed();
+      delay = decision.delayMs;
+      console.error(
+        `[poller] ${key}: ${msg} (failure ${decision.failureCount}; retrying in ${formatRetryDelay(delay)})`,
+      );
       const prev = store.get(key);
       if (prev && prev.status !== "error") {
         // keep last-good data, just flag it
@@ -79,7 +90,6 @@ async function pollLoop(ticker: Ticker, kind: FeedKind): Promise<void> {
         store.set(key, flagged);
         emit(flagged);
       }
-      delay = Math.min(delay * 2, MAX_BACKOFF_MS);
     }
     await Bun.sleep(delay);
   }
