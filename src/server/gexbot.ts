@@ -9,7 +9,7 @@ import type {
   Ticker,
 } from "../shared/types";
 import { FETCH_TIMEOUT_MS } from "./poll-retry";
-import { SerialTaskQueue } from "./serial-request";
+import { RecoveringSerialTaskQueue } from "./serial-request";
 
 // The rendered docs show api.gexbot.com/{ticker}/{package}/{period}. GexBot's
 // versioned host exposes the same data with category names (gex_zero, etc.) and
@@ -19,7 +19,20 @@ const CHART_BASE_URL = "https://api.gex.bot/v2";
 const CONVERSION_URL = "https://api.gex.bot/v2/futures/conversion";
 const USER_AGENT = "gex-cockpit/0.2.0 (local)";
 const STARTUP_TIMEOUT_MS = 3_000;
-const requestQueue = new SerialTaskQueue();
+const WARMUP_URL = `${CONVERSION_URL}?ticker=QQQ&future=NQ&model=affine`;
+const requestQueue = new RecoveringSerialTaskQueue(
+  async () => {
+    await rawRequestJson<RawConversion>(WARMUP_URL, STARTUP_TIMEOUT_MS);
+  },
+  {
+    lost: () => console.warn(
+      "[poller] provider connection timed out at 1.0s; rebuilding with a 3.0s recovery allowance",
+    ),
+    recovered: () => console.info(
+      "[poller] provider connection rebuilt; normal 1.0s polling resumed",
+    ),
+  },
+);
 
 const API_KEY = process.env.GEXBOT_API_KEY;
 
@@ -105,15 +118,20 @@ function feedUrl(ticker: Ticker, kind: FeedKind): string {
   return `${CHART_BASE_URL}/${ticker}/${pkg}/gex_${aggregation}`;
 }
 
-async function requestJson<T>(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<T> {
-  return requestQueue.run(async () => {
-    const res = await fetch(url, {
-      headers: headers(),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as T;
+async function rawRequestJson<T>(url: string, timeoutMs: number): Promise<T> {
+  const res = await fetch(url, {
+    headers: headers(),
+    signal: AbortSignal.timeout(timeoutMs),
   });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as T;
+}
+
+async function requestJson<T>(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<T> {
+  return requestQueue.run(
+    () => rawRequestJson<T>(url, timeoutMs),
+    timeoutMs === FETCH_TIMEOUT_MS,
+  );
 }
 
 /**
@@ -122,10 +140,7 @@ async function requestJson<T>(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promis
  * and conversion request still uses the required one-second timeout.
  */
 export async function warmGexbotConnection(): Promise<void> {
-  await requestJson<RawConversion>(
-    `${CONVERSION_URL}?ticker=QQQ&future=NQ&model=affine`,
-    STARTUP_TIMEOUT_MS,
-  );
+  await requestJson<RawConversion>(WARMUP_URL, STARTUP_TIMEOUT_MS);
 }
 
 export async function fetchFeed(ticker: Ticker, kind: FeedKind): Promise<FeedSnapshot> {

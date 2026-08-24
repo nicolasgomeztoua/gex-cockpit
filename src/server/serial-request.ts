@@ -16,3 +16,43 @@ export class SerialTaskQueue {
     return result;
   }
 }
+
+export function isTimeoutError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === "TimeoutError")
+    || (error instanceof Error && /timed?\s*out|timeout/i.test(error.message))
+  );
+}
+
+interface RecoveryLog {
+  lost: () => void;
+  recovered: () => void;
+}
+
+/**
+ * Keep recovery inside the serial queue. If a reused provider connection dies,
+ * no other feed can start another request until one recovery probe has rebuilt
+ * the connection and the interrupted request has been retried.
+ */
+export class RecoveringSerialTaskQueue {
+  private readonly queue = new SerialTaskQueue();
+
+  constructor(
+    private readonly recover: () => Promise<void>,
+    private readonly log: RecoveryLog,
+  ) {}
+
+  run<T>(task: () => Promise<T>, recoverOnTimeout = true): Promise<T> {
+    return this.queue.run(async () => {
+      try {
+        return await task();
+      } catch (error) {
+        if (!recoverOnTimeout || !isTimeoutError(error)) throw error;
+        this.log.lost();
+        await this.recover();
+        this.log.recovered();
+        return task();
+      }
+    });
+  }
+}

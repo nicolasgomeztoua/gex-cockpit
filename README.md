@@ -96,8 +96,9 @@ vite.config.ts  React + Tailwind v4, build output, and dev API proxy
 - State GEX Profile call/put imbalance and Options Profile long/short gamma are
   separate feeds and separate chart layers; they are not relabeled as each other.
 - Normal GexBot requests are serialized on one warmed connection and retain the
-  1-second timeout. A single cold-start request may use up to 3 seconds because
-  establishing the provider connection is measurably slower than one second.
+  1-second timeout. Cold start and an automatic connection rebuild may use up to
+  3 seconds because establishing provider TLS is measurably slower than one second;
+  after rebuilding, the interrupted request is retried at the normal 1-second limit.
 - Spot is GexBot context data, not exchange OHLC — candles are 1-minute buckets of polled ticks.
 - History lands in `data/gex-cockpit.db` (SQLite, gitignored). Mock mode never writes.
 - Strike-row index semantics (index 1 = volume/state value, index 2 = OI value) were
