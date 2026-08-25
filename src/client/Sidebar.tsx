@@ -466,11 +466,14 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
                           <span style={{ color: S.shortGamma }}>major short gamma</span>
                           <span className="ml-auto text-foreground">{fmtPrice(gamma.majors.negVol)}</span>
                         </div>
+                        <div className="px-1.5 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Options profile · gamma · {gamma.aggregation === "one" ? "next" : "latest"}
+                        </div>
                       </>
                     )}
                     {profile && (
                       <div className="px-1.5 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        GEX profile · {profile.aggregation === "zero" ? "latest" : profile.aggregation === "one" ? "next" : "90d"}
+                        GEX profile bars · {profile.aggregation === "zero" ? "latest" : profile.aggregation === "one" ? "next" : "90d"}
                       </div>
                     )}
                   </>
@@ -505,7 +508,22 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
         {view === "settings" && (
           <>
             <Section title="state" color={S.longGamma}>
-              {stateKeys.map(k => (
+              <div className="px-1.5 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                Options profile · gamma
+              </div>
+              {stateKeys.filter(k => k === "mlg" || k === "msg").map(k => (
+                <LevelRow key={k} levelKey={k} cfg={ts.levels[k]} onChange={p => setLevel(k, p)} />
+              ))}
+              <Row
+                label="Call / put IVOL (dots)"
+                color={S.longGamma}
+                on={ts.gammaBars}
+                onChange={v => setTicker({ gammaBars: v })}
+              />
+              <div className="mt-1 px-1.5 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                GEX profile
+              </div>
+              {stateKeys.filter(k => k === "mcg" || k === "mpg").map(k => (
                 <LevelRow key={k} levelKey={k} cfg={ts.levels[k]} onChange={p => setLevel(k, p)} />
               ))}
               <Row
@@ -513,12 +531,6 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
                 color={S.callGex}
                 on={ts.stateBars}
                 onChange={v => setTicker({ stateBars: v })}
-              />
-              <Row
-                label="Options Gamma (dots)"
-                color={S.longGamma}
-                on={ts.gammaBars}
-                onChange={v => setTicker({ gammaBars: v })}
               />
             </Section>
 

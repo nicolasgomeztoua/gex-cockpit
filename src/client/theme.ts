@@ -102,7 +102,7 @@ export type TickerKey = "NDX" | "QQQ";
 export interface TickerSettings {
   chartType: "candles" | "line";
   stateBars: boolean; // State GEX Profile imbalance (cyan/purple)
-  gammaBars: boolean; // options-profile net gamma dots
+  gammaBars: boolean; // options-profile call/put IVOL dots for the selected Greek
   volBars: boolean; // classic GEX by volume (light green/salmon)
   oiBars: boolean; // classic GEX by OI (dark green/dark red)
   priors: boolean; // prior-snapshot dots on the profiles
@@ -117,7 +117,7 @@ export interface LayerSettings {
   tickers: Record<TickerKey, TickerSettings>;
 }
 
-const defaultLevel = (): LevelConfig => ({ line: true, label: false, alert: false });
+const defaultLevel = (line = true): LevelConfig => ({ line, label: false, alert: false });
 
 const defaultTicker = (): TickerSettings => ({
   chartType: "candles",
@@ -130,8 +130,10 @@ const defaultTicker = (): TickerSettings => ({
   levels: {
     mlg: defaultLevel(),
     msg: defaultLevel(),
-    mcg: defaultLevel(),
-    mpg: defaultLevel(),
+    // GexBot's State panel uses Options Profile Gamma for its primary major
+    // levels. GEX Profile call/put majors remain available as secondary layers.
+    mcg: defaultLevel(false),
+    mpg: defaultLevel(false),
     zg: defaultLevel(),
     mpv: defaultLevel(),
     mnv: defaultLevel(),
