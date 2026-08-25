@@ -36,6 +36,14 @@ function gexAt(rows: StrikeRow[] | undefined, price: number, col: 1 | 2): number
   return best[col];
 }
 
+/** specified Greek value at the nearest Convexity strike (tuple column 5) */
+function gammaAt(rows: StrikeRow[] | undefined, price: number): number | null {
+  if (!rows?.length) return null;
+  let best: StrikeRow = rows[0];
+  for (const r of rows) if (Math.abs(r[0] - price) < Math.abs(best[0] - price)) best = r;
+  return best[4] ?? null;
+}
+
 const fmtPrice = (v: number) =>
   Math.abs(v) >= 3000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(2);
 
@@ -253,9 +261,9 @@ export function GexChart({
       const lv = d.settings.levels;
       if (d.gamma) {
         if (lv.mlg.line && d.gamma.majors.posVol)
-          entries.push({ key: "mlg", price: d.gamma.majors.posVol, value: gexAt(d.gamma.strikes, d.gamma.majors.posVol, 1) });
+          entries.push({ key: "mlg", price: d.gamma.majors.posVol, value: gammaAt(d.gamma.strikes, d.gamma.majors.posVol) });
         if (lv.msg.line && d.gamma.majors.negVol)
-          entries.push({ key: "msg", price: d.gamma.majors.negVol, value: gexAt(d.gamma.strikes, d.gamma.majors.negVol, 1) });
+          entries.push({ key: "msg", price: d.gamma.majors.negVol, value: gammaAt(d.gamma.strikes, d.gamma.majors.negVol) });
       }
       if (d.state) {
         if (lv.mcg.line && d.state.majors.posVol)
@@ -520,14 +528,22 @@ export function GexChart({
             }
           : undefined,
       });
-    if (settings.gammaBars && gamma)
+    if (settings.gammaBars && gamma) {
       sets.push({
         id: "gamma",
         rows: gamma.strikes.map(r => [r[0], r[1]] as [number, number]),
         pos: GEXBOT.state.longGamma,
+        neg: GEXBOT.state.longGamma,
+        dotsOnly: true,
+      });
+      sets.push({
+        id: "gamma",
+        rows: gamma.strikes.map(r => [r[0], r[2]] as [number, number]),
+        pos: GEXBOT.state.shortGamma,
         neg: GEXBOT.state.shortGamma,
         dotsOnly: true,
       });
+    }
     if (settings.volBars && oi)
       sets.push({
         id: "vol",

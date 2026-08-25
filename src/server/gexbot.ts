@@ -80,7 +80,7 @@ interface RawGamma {
   major_negative: number;
   major_long_gamma: number;
   major_short_gamma: number;
-  // [strike, call imbalance, put imbalance, requested greek, priors[]]
+  // [strike, call_ivol, put_ivol, requested greek, priors[]]
   mini_contracts: [number, number, number, number, number[]][];
 }
 
@@ -236,7 +236,13 @@ export function parseGammaFeed(ticker: Ticker, raw: RawGamma): FeedSnapshot {
     netGexOI: 0,
     minDte: raw.min_dte,
     strikes: raw.mini_contracts.map(
-      row => [row[0], row[3], 0, Array.isArray(row[4]) ? row[4] : []] as StrikeRow,
+      row => [
+        row[0],
+        row[1],
+        row[2],
+        Array.isArray(row[4]) ? row[4] : [],
+        row[3],
+      ] as StrikeRow,
     ),
     status: "live",
   };

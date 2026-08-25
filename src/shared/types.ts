@@ -17,8 +17,11 @@ export interface Majors {
   zeroGamma: number | null;
 }
 
-/** [strike, volValue, oiValue, priorValues (1/5/10/15/30-min prior snapshots)] */
-export type StrikeRow = [number, number, number, number[]];
+/**
+ * Classic/State: [strike, volValue, oiValue, priors].
+ * Convexity: [strike, callIvol, putIvol, priors, specifiedGamma].
+ */
+export type StrikeRow = [number, number, number, number[], number?];
 
 export interface FeedSnapshot {
   feed: FeedKey;
@@ -35,7 +38,7 @@ export interface FeedSnapshot {
   netGexVol: number;
   netGexOI: number;
   minDte: number;
-  /** state responses have oiValue = 0 */
+  /** State rows use GEX columns; Convexity rows use call/put IVOL columns. */
   strikes: StrikeRow[];
   status: "live" | "error";
   error?: string;

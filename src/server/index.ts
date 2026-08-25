@@ -16,7 +16,15 @@ if (REPLAY_DATE) {
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: PORT,
-  fetch: app.fetch,
+  fetch(request, bunServer) {
+    // Bun closes streaming responses after 10 idle seconds by default. Feed
+    // updates can be quieter than that, so exempt the SSE route and let its
+    // application heartbeat own connection liveness.
+    if (new URL(request.url).pathname === "/api/stream") {
+      bunServer.timeout(request, 0);
+    }
+    return app.fetch(request);
+  },
 });
 
 // The poller bootstraps its provider connection after the local server binds,

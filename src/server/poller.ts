@@ -302,12 +302,16 @@ async function startMock(): Promise<void> {
       for (const kind of ["state", "gamma", "oi"] as FeedKind[]) {
         const key = `${ticker}:${kind}` as FeedKey;
         const base = bases.get(key)!;
-        const strikes: StrikeRow[] = base.strikes.map(([k, v, o, p]) => [
-          k,
-          v * (1 + 0.06 * randn()),
-          o * (1 + 0.06 * randn()),
-          p.map(x => x * (1 + 0.04 * randn())),
-        ]);
+        const strikes: StrikeRow[] = base.strikes.map(([k, v, o, p, greek]) => {
+          const next: StrikeRow = [
+            k,
+            v * (1 + 0.06 * randn()),
+            o * (1 + 0.06 * randn()),
+            p.map(x => x * (1 + 0.04 * randn())),
+          ];
+          if (greek !== undefined && greek !== null) next[4] = greek * (1 + 0.06 * randn());
+          return next;
+        });
         const near = strikes.filter(([k]) => Math.abs(k - spot) / spot < 0.012 && k !== 0);
         const wall = (col: 1 | 2, sign: 1 | -1) => {
           const c = near

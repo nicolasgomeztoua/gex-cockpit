@@ -22,9 +22,11 @@ export function convertSnapshot(
         ? price(snapshot.majors.zeroGamma)
         : snapshot.majors.zeroGamma,
     },
-    strikes: snapshot.strikes.map(
-      ([strike, vol, oi, priors]) => [price(strike), vol, oi, priors] as StrikeRow,
-    ),
+    strikes: snapshot.strikes.map(([strike, vol, oi, priors, specifiedGreek]) => {
+      const converted: StrikeRow = [price(strike), vol, oi, priors];
+      if (specifiedGreek !== undefined && specifiedGreek !== null) converted[4] = specifiedGreek;
+      return converted;
+    }),
   };
 }
 

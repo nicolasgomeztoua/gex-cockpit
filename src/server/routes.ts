@@ -120,7 +120,9 @@ export const api = new Hono()
       unsubscribes.push(subscribe(snap => send("update", snap)));
       unsubscribes.push(subscribeConversions(conversion => send("conversion", conversion)));
       unsubscribes.push(subscribeReplay(message => send(message.event, message.data)));
-      heartbeat = setInterval(() => enqueue(() => stream.write(": hb\n\n")), 15_000);
+      // Stay visibly alive through local proxies as well as the browser. Bun's
+      // own idle timeout is disabled for this route in index.ts.
+      heartbeat = setInterval(() => enqueue(() => stream.write(": hb\n\n")), 5_000);
 
       await untilDisconnected;
     }),
