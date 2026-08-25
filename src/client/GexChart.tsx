@@ -4,7 +4,6 @@ import {
   createTextWatermark,
   CandlestickSeries,
   LineSeries,
-  LineStyle,
   type CandlestickData,
   type IChartApi,
   type IPriceLine,
@@ -334,9 +333,8 @@ export function GexChart({
       lastSpotRef.current = null;
       candleRef.current = null;
     }
-    // cyan current-price line, gexbot-style. Known limitation: on candles the
-    // axis pill follows the last candle's up/down color (no independent
-    // pill-color option in lightweight-charts).
+    // Keep the current spot label on the price axis without drawing a
+    // horizontal spot line across the chart.
     const series =
       settings.chartType === "candles"
         ? chart.addSeries(CandlestickSeries, {
@@ -346,18 +344,14 @@ export function GexChart({
             borderDownColor: GEXBOT.state.candleDown,
             wickUpColor: GEXBOT.state.candleUp,
             wickDownColor: GEXBOT.state.candleDown,
-            priceLineVisible: true,
-            priceLineColor: GEXBOT.state.convexityPositive,
-            priceLineStyle: LineStyle.Solid,
-            priceLineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: true,
           })
         : chart.addSeries(LineSeries, {
             color: GEXBOT.state.spotHistory,
             lineWidth: 2,
-            priceLineVisible: true,
-            priceLineColor: GEXBOT.state.convexityPositive,
-            priceLineStyle: LineStyle.Solid,
-            priceLineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: true,
           });
     const primitive = new GexProfilePrimitive();
     const nowLine = new VerticalNowLinePrimitive();
