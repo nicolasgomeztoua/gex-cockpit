@@ -352,7 +352,7 @@ export class VerticalNowLinePrimitive implements ISeriesPrimitive<Time> {
           const x = param.chart.timeScale().timeToCoordinate(self._time);
           if (x === null) return; // scrolled out of view
           target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
-            ctx.strokeStyle = GEXBOT.state.callGex;
+            ctx.strokeStyle = GEXBOT.state.convexityPositive;
             ctx.globalAlpha = 0.45;
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 4]);

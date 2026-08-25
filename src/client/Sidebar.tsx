@@ -448,7 +448,7 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
       <SidebarContent>
         {view === "main" && (
           <>
-            <Section title="state" color={S.callGex}>
+            <Section title="convexity" color={S.convexityPositive}>
               {(() => {
                 const gamma = feeds[`${scope}:gamma`];
                 const profile = feeds[`${scope}:state`];
@@ -459,11 +459,11 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
                     {gamma && (
                       <>
                         <div className="flex items-baseline px-1.5 py-[3px] text-[13px] tabular-nums">
-                          <span style={{ color: S.longGamma }}>major long gamma</span>
+                          <span style={{ color: S.convexityPositive }}>major long gamma</span>
                           <span className="ml-auto text-foreground">{fmtPrice(gamma.majors.posVol)}</span>
                         </div>
                         <div className="flex items-baseline px-1.5 py-[3px] text-[13px] tabular-nums">
-                          <span style={{ color: S.shortGamma }}>major short gamma</span>
+                          <span style={{ color: S.convexityNegative }}>major short gamma</span>
                           <span className="ml-auto text-foreground">{fmtPrice(gamma.majors.negVol)}</span>
                         </div>
                         <div className="px-1.5 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -471,7 +471,7 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
                         </div>
                       </>
                     )}
-                    {profile && (
+                    {profile && ts.stateBars && (
                       <div className="px-1.5 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
                         GEX profile bars · {profile.aggregation === "zero" ? "latest" : profile.aggregation === "one" ? "next" : "90d"}
                       </div>
@@ -507,28 +507,28 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
 
         {view === "settings" && (
           <>
-            <Section title="state" color={S.longGamma}>
+            <Section title="state" color={S.convexityPositive}>
               <div className="px-1.5 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                Options profile · gamma
+                Convexity · Options profile gamma
               </div>
               {stateKeys.filter(k => k === "mlg" || k === "msg").map(k => (
                 <LevelRow key={k} levelKey={k} cfg={ts.levels[k]} onChange={p => setLevel(k, p)} />
               ))}
               <Row
-                label="Call / put IVOL (dots)"
-                color={S.longGamma}
+                label="Convexity bars + IVOL dots"
+                color={S.convexityPositive}
                 on={ts.gammaBars}
                 onChange={v => setTicker({ gammaBars: v })}
               />
               <div className="mt-1 px-1.5 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                GEX profile
+                State GEX profile · optional
               </div>
               {stateKeys.filter(k => k === "mcg" || k === "mpg").map(k => (
                 <LevelRow key={k} levelKey={k} cfg={ts.levels[k]} onChange={p => setLevel(k, p)} />
               ))}
               <Row
-                label="GEX Profile (bars)"
-                color={S.callGex}
+                label="State GEX profile (bars)"
+                color={S.gexPositive}
                 on={ts.stateBars}
                 onChange={v => setTicker({ stateBars: v })}
               />

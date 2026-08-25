@@ -13,10 +13,12 @@ export const GEXBOT = {
   accentBlue: "#8ab4f8", // gexbot's active-toggle / segmented-control blue
 
   state: {
-    callGex: "#4de3f2", // cyan — positive/call GEX imbalance
-    putGex: "#a94de8", // purple — negative/put GEX imbalance
-    longGamma: "#75f06a", // options-profile long gamma
-    shortGamma: "#ff4b4b", // options-profile short gamma
+    convexityPositive: "#4de3f2", // Options Profile Gamma — positive/cyan bars
+    convexityNegative: "#a94de8", // Options Profile Gamma — negative/blue-purple bars
+    gexPositive: "#55e875", // State GEX Profile — positive/light green bars
+    gexNegative: "#ff3f3f", // State GEX Profile — negative/light red bars
+    callIvol: "#75f06a", // Options Profile call-IVOL dots
+    putIvol: "#ff4b4b", // Options Profile put-IVOL dots
     spotHistory: "#ffffff",
     candleUp: "#26d467",
     candleDown: "#f63538",
@@ -54,10 +56,10 @@ export const LEVEL_META: Record<
   LevelKey,
   { name: string; color: string; section: "state" | "classic" }
 > = {
-  mlg: { name: "Major Long Gamma", color: GEXBOT.state.longGamma, section: "state" },
-  msg: { name: "Major Short Gamma", color: GEXBOT.state.shortGamma, section: "state" },
-  mcg: { name: "Major Call GEX", color: GEXBOT.state.callGex, section: "state" },
-  mpg: { name: "Major Put GEX", color: GEXBOT.state.putGex, section: "state" },
+  mlg: { name: "Major Long Gamma", color: GEXBOT.state.convexityPositive, section: "state" },
+  msg: { name: "Major Short Gamma", color: GEXBOT.state.convexityNegative, section: "state" },
+  mcg: { name: "State GEX Call", color: GEXBOT.state.gexPositive, section: "state" },
+  mpg: { name: "State GEX Put", color: GEXBOT.state.gexNegative, section: "state" },
   zg: { name: "Zero Gamma", color: GEXBOT.classic.zeroGamma, section: "classic" },
   mpv: { name: "Major Positive Volume", color: GEXBOT.classic.majorPosVol, section: "classic" },
   mnv: { name: "Major Negative Volume", color: GEXBOT.classic.majorNegVol, section: "classic" },
@@ -101,8 +103,8 @@ export type TickerKey = "NDX" | "QQQ";
 
 export interface TickerSettings {
   chartType: "candles" | "line";
-  stateBars: boolean; // State GEX Profile imbalance (cyan/purple)
-  gammaBars: boolean; // options-profile call/put IVOL dots for the selected Greek
+  stateBars: boolean; // State GEX Profile imbalance (light green/red)
+  gammaBars: boolean; // Options Profile Gamma: signed bars + call/put IVOL dots
   volBars: boolean; // classic GEX by volume (light green/salmon)
   oiBars: boolean; // classic GEX by OI (dark green/dark red)
   priors: boolean; // prior-snapshot dots on the profiles
@@ -121,7 +123,7 @@ const defaultLevel = (line = true): LevelConfig => ({ line, label: false, alert:
 
 const defaultTicker = (): TickerSettings => ({
   chartType: "candles",
-  stateBars: true,
+  stateBars: false,
   gammaBars: true,
   volBars: false,
   oiBars: true,

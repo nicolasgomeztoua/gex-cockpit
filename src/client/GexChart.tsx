@@ -347,7 +347,7 @@ export function GexChart({
             wickUpColor: GEXBOT.state.candleUp,
             wickDownColor: GEXBOT.state.candleDown,
             priceLineVisible: true,
-            priceLineColor: GEXBOT.state.callGex,
+            priceLineColor: GEXBOT.state.convexityPositive,
             priceLineStyle: LineStyle.Solid,
             priceLineWidth: 1,
           })
@@ -355,7 +355,7 @@ export function GexChart({
             color: GEXBOT.state.spotHistory,
             lineWidth: 2,
             priceLineVisible: true,
-            priceLineColor: GEXBOT.state.callGex,
+            priceLineColor: GEXBOT.state.convexityPositive,
             priceLineStyle: LineStyle.Solid,
             priceLineWidth: 1,
           });
@@ -519,8 +519,8 @@ export function GexChart({
       sets.push({
         id: "state",
         rows: state.strikes.map(r => [r[0], r[1]] as [number, number]),
-        pos: GEXBOT.state.callGex,
-        neg: GEXBOT.state.putGex,
+        pos: GEXBOT.state.gexPositive,
+        neg: GEXBOT.state.gexNegative,
         priors: settings.priors
           ? {
               rows: state.strikes.map(r => [r[0], r[3]] as [number, number[]]),
@@ -529,18 +529,34 @@ export function GexChart({
           : undefined,
       });
     if (settings.gammaBars && gamma) {
+      // Convexity itself is the requested-Greek column. This is the cyan/blue
+      // bar profile in GexBot's State → Options Profile → Gamma view.
+      sets.push({
+        id: "gamma",
+        rows: gamma.strikes.map(r => [r[0], r[4] ?? 0] as [number, number]),
+        pos: GEXBOT.state.convexityPositive,
+        neg: GEXBOT.state.convexityNegative,
+        priors: settings.priors
+          ? {
+              rows: gamma.strikes.map(r => [r[0], r[3]] as [number, number[]]),
+              colors: GEXBOT.state.priors,
+            }
+          : undefined,
+      });
+      // The same Options Profile response carries call/put IVOL. GexBot draws
+      // these as green/red points alongside the signed Convexity bars.
       sets.push({
         id: "gamma",
         rows: gamma.strikes.map(r => [r[0], r[1]] as [number, number]),
-        pos: GEXBOT.state.longGamma,
-        neg: GEXBOT.state.longGamma,
+        pos: GEXBOT.state.callIvol,
+        neg: GEXBOT.state.callIvol,
         dotsOnly: true,
       });
       sets.push({
         id: "gamma",
         rows: gamma.strikes.map(r => [r[0], r[2]] as [number, number]),
-        pos: GEXBOT.state.shortGamma,
-        neg: GEXBOT.state.shortGamma,
+        pos: GEXBOT.state.putIvol,
+        neg: GEXBOT.state.putIvol,
         dotsOnly: true,
       });
     }
