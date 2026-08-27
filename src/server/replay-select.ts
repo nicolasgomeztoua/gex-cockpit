@@ -1,37 +1,40 @@
 /**
  * Pure session-selection helpers for replay mode: which stored rows belong to a
- * requested trading date, judged in America/New_York. Kept free of any DB or
- * runtime import so the date arithmetic is unit-testable on its own.
+ * requested 09:30–16:00 New York RTH session. Kept free of any DB or runtime
+ * import so the boundary arithmetic is unit-testable on its own.
  */
 
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/New_York",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
+export {
+  etDate,
+  isAtOrAfterMarketOpen,
+  isInRthSession,
+  rthSessionBounds,
+  selectLiveSessionDate,
+} from "../shared/session";
+import { etDate, isInRthSession, rthSessionBounds } from "../shared/session";
 
-/** `YYYY-MM-DD` of an epoch-second instant, in Eastern time. */
-export function etDate(epochSec: number): string {
-  const parts = dateFormatter.formatToParts(new Date(epochSec * 1000));
-  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
-}
-
-/** Every ET date present in the stored snapshots, ascending and deduped. */
+/** Every New York RTH session present in the stored snapshots, ascending. */
 export function availableDates(rows: { providerTs: number }[]): string[] {
-  return [...new Set(rows.map(row => etDate(row.providerTs)))].sort();
+  return [
+    ...new Set(
+      rows
+        .filter(row => isInRthSession(row.providerTs))
+        .map(row => etDate(row.providerTs)),
+    ),
+  ].sort();
 }
 
-/** Snapshots recorded on `date` (ET). */
+/** Snapshots recorded inside `date`'s inclusive New York RTH window. */
 export function selectSessionEvents<T extends { providerTs: number }>(
   rows: T[],
   date: string,
 ): T[] {
-  return rows.filter(row => etDate(row.providerTs) === date);
+  const { startTs, endTs } = rthSessionBounds(date);
+  return rows.filter(row => row.providerTs >= startTs && row.providerTs <= endTs);
 }
 
-/** Spot ticks recorded on `date` (ET). */
+/** Spot ticks recorded inside `date`'s inclusive New York RTH window. */
 export function selectSessionTicks<T extends { ts: number }>(rows: T[], date: string): T[] {
-  return rows.filter(row => etDate(row.ts) === date);
+  const { startTs, endTs } = rthSessionBounds(date);
+  return rows.filter(row => row.ts >= startTs && row.ts <= endTs);
 }

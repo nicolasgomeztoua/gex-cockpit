@@ -1,5 +1,22 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { ArrowLeft, Bell, ChevronDown, Home, Pause, Play, Settings, Type } from "lucide-react";
+import {
+  ArrowLeft,
+  Bell,
+  CalendarDays,
+  ChevronDown,
+  FastForward,
+  History,
+  Home,
+  Pause,
+  Play,
+  Radio,
+  Rewind,
+  Settings,
+  SkipBack,
+  SkipForward,
+  Trash2,
+  Type,
+} from "lucide-react";
 import {
   Sidebar as SidebarRoot,
   SidebarContent,
@@ -28,7 +45,8 @@ import {
   type TickerKey,
   type TickerSettings,
 } from "./theme";
-import type { FeedKey, FeedSnapshot, ReplayStatus } from "../shared/types";
+import type { FeedKey, FeedSnapshot, ReplaySession, ReplayStatus } from "../shared/types";
+import { etDate } from "../shared/session";
 import { cn } from "./lib/utils";
 
 const fmtPrice = (v: number) =>
@@ -192,24 +210,90 @@ function Field(props: { label: string; children: ReactNode }) {
   );
 }
 
-type ReplayAction = "play" | "pause" | "seek" | "speed";
+type ReplayAction = "start" | "stop" | "play" | "pause" | "seek" | "speed";
 
-const postReplay = (action: ReplayAction, value?: number) =>
-  rpc.api.replay.$post({ json: value === undefined ? { action } : { action, value } });
+const postReplay = (action: ReplayAction, options?: { value?: number; date?: string }) =>
+  rpc.api.replay.$post({ json: { action, ...options } });
 
-function Playback({ replay }: { replay: ReplayStatus }) {
-  const [sliderClock, setSliderClock] = useState(replay.clock);
+function HistoryPanel({
+  replay,
+  liveHistory,
+}: {
+  replay: ReplayStatus | null;
+  liveHistory: [number, number][];
+}) {
+  const [sessions, setSessions] = useState<ReplaySession[]>([]);
+  const [selected, setSelected] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [sliderClock, setSliderClock] = useState(0);
   const dragging = useRef(false);
-  const latestSeek = useRef(replay.clock);
+  const latestSeek = useRef(0);
   const lastPostAt = useRef(0);
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activating = useRef(false);
+  const seekInFlight = useRef(false);
+  const queuedSeek = useRef<number | null>(null);
+  const today = etDate(Math.floor(Date.now() / 1_000));
+  const loadedStart = liveHistory[0]?.[0] ?? null;
+  const loadedEnd = liveHistory.at(-1)?.[0] ?? null;
+  const loadedDate = loadedStart === null ? "" : etDate(loadedStart);
 
   useEffect(() => {
-    if (!dragging.current) {
-      setSliderClock(replay.clock);
-      latestSeek.current = replay.clock;
+    let cancelled = false;
+    const refresh = () => {
+      void rpc.api.replay.$get()
+        .then(async response => {
+          const payload = await response.json();
+          if (cancelled) return;
+          setSessions(payload.sessions);
+          setSelected(current =>
+            current && payload.sessions.some(session => session.date === current)
+              ? current
+              : payload.sessions.at(-1)?.date ?? "",
+          );
+          setError("");
+        })
+        .catch(reason => {
+          if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    };
+    refresh();
+    const timer = setInterval(refresh, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (replay?.date) setSelected(replay.date);
+  }, [replay?.date]);
+
+  const selectedSession = sessions.find(session => session.date === selected);
+  const selectedEnd = selectedSession?.endTs ?? 0;
+  const loadedSessionSelected = !replay
+    && loadedStart !== null
+    && loadedEnd !== null
+    && selected === loadedDate
+    && selectedSession !== undefined;
+  const seekRange = replay
+    ? { startTs: replay.startTs, endTs: replay.endTs }
+    : loadedSessionSelected
+      ? { startTs: loadedStart, endTs: loadedEnd }
+      : null;
+  const displayClock = replay?.clock ?? loadedEnd ?? selectedEnd;
+
+  useEffect(() => {
+    if (!dragging.current && !activating.current) {
+      setSliderClock(displayClock);
+      latestSeek.current = displayClock;
     }
-  }, [replay.clock]);
+  }, [displayClock]);
 
   useEffect(
     () => () => {
@@ -218,54 +302,217 @@ function Playback({ replay }: { replay: ReplayStatus }) {
     [],
   );
 
-  const seek = (immediate = false) => {
-    const run = () => {
-      pending.current = null;
-      lastPostAt.current = Date.now();
-      void postReplay("seek", latestSeek.current);
-    };
-    if (immediate) {
-      if (pending.current) clearTimeout(pending.current);
-      run();
-      return;
+  const loadHistory = async (
+    initialClock?: number,
+    showBusy = true,
+  ): Promise<ReplayStatus | null> => {
+    if (!selected || busy) return null;
+    if (showBusy) setBusy(true);
+    setError("");
+    try {
+      const response = await postReplay("start", { date: selected, value: initialClock });
+      const payload = await response.json();
+      if (!response.ok) {
+        setError("error" in payload ? payload.error : "Could not load history");
+        return null;
+      }
+      return "replay" in payload ? payload.replay : null;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      return null;
+    } finally {
+      if (showBusy) setBusy(false);
     }
-    const delay = Math.max(0, 250 - (Date.now() - lastPostAt.current));
-    if (delay === 0) run();
-    else if (!pending.current) pending.current = setTimeout(run, delay);
   };
 
-  const clockLabel = new Date(sliderClock * 1000).toLocaleTimeString("en-US", {
+  const flushSeek = async () => {
+    if (seekInFlight.current || queuedSeek.current === null) return;
+    seekInFlight.current = true;
+    const value = queuedSeek.current;
+    queuedSeek.current = null;
+    lastPostAt.current = Date.now();
+    try {
+      const response = await postReplay("seek", { value });
+      if (!response.ok) {
+        const payload = await response.json();
+        setError("error" in payload ? payload.error : "Could not seek history");
+        queuedSeek.current = null;
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      queuedSeek.current = null;
+    } finally {
+      seekInFlight.current = false;
+      if (queuedSeek.current !== null && !pending.current) {
+        const delay = Math.max(0, 50 - (Date.now() - lastPostAt.current));
+        if (delay === 0) void flushSeek();
+        else {
+          pending.current = setTimeout(() => {
+            pending.current = null;
+            void flushSeek();
+          }, delay);
+        }
+      }
+    }
+  };
+
+  const queueSeek = (value: number, immediate: boolean) => {
+    queuedSeek.current = value;
+    if (seekInFlight.current) return;
+    if (immediate) {
+      if (pending.current) clearTimeout(pending.current);
+      pending.current = null;
+      void flushSeek();
+      return;
+    }
+    const delay = Math.max(0, 50 - (Date.now() - lastPostAt.current));
+    if (delay === 0) void flushSeek();
+    else if (!pending.current) {
+      pending.current = setTimeout(() => {
+        pending.current = null;
+        void flushSeek();
+      }, delay);
+    }
+  };
+
+  const activateAndSeek = async (value: number) => {
+    latestSeek.current = value;
+    if (replay) {
+      const bounded = Math.min(replay.endTs, Math.max(replay.startTs, value));
+      setSliderClock(bounded);
+      latestSeek.current = bounded;
+      queueSeek(bounded, false);
+      return;
+    }
+    if (!loadedSessionSelected || activating.current) return;
+    activating.current = true;
+    const active = await loadHistory(value, false);
+    if (!active) {
+      activating.current = false;
+      return;
+    }
+    const bounded = Math.min(active.endTs, Math.max(active.startTs, latestSeek.current));
+    setSliderClock(bounded);
+    latestSeek.current = bounded;
+    activating.current = false;
+    if (bounded !== active.clock) queueSeek(bounded, true);
+  };
+
+  const seek = (immediate = false) => {
+    if (!replay) {
+      if (immediate && loadedSessionSelected) void activateAndSeek(latestSeek.current);
+      return;
+    }
+    queueSeek(latestSeek.current, immediate);
+  };
+
+  const seekTo = (value: number) => {
+    if (!seekRange) return;
+    const bounded = Math.min(seekRange.endTs, Math.max(seekRange.startTs, value));
+    setSliderClock(bounded);
+    latestSeek.current = bounded;
+    if (replay) seek(true);
+    else void activateAndSeek(bounded);
+  };
+
+  const clearHistory = async () => {
+    if (!replay?.returnToLive || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await postReplay("stop");
+      const payload = await response.json();
+      if (!response.ok) setError("error" in payload ? payload.error : "Could not clear history");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clockLabel = sliderClock > 0 ? new Date(sliderClock * 1000).toLocaleTimeString("en-US", {
     timeZone: "America/New_York",
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
-  });
+    hour12: true,
+  }) : "—";
+
+  const controlClass =
+    "flex size-8 items-center justify-center rounded text-foreground transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:text-muted-foreground/25 disabled:hover:bg-transparent";
 
   return (
-    <Section title="playback" color="#f59e0b">
+    <Section title="history" color="#9ec5f8">
       <div className="px-1.5 py-1.5">
-        <div className="flex items-center gap-2">
-          <button
-            data-probe="replay-toggle"
-            onClick={() => void postReplay(replay.playing ? "pause" : "play")}
-            className="flex size-8 cursor-pointer items-center justify-center rounded border border-amber-500/60 text-amber-400 transition-colors hover:bg-amber-500/10"
-            title={replay.playing ? "Pause replay" : "Play replay"}
+        {loading ? (
+          <div className="text-[12px] text-muted-foreground/60">loading recorded RTH sessions…</div>
+        ) : sessions.length === 0 ? (
+          <div className="text-[12px] text-muted-foreground/60">No recorded RTH sessions yet.</div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              data-probe="replay-start"
+              disabled={!selected || busy}
+              onClick={() => void loadHistory()}
+              className="flex cursor-pointer items-center justify-center gap-2 rounded bg-[#9ec5f8] px-2 py-2 text-[13px] font-medium text-black transition-colors hover:bg-[#b4d3fa] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <History className="size-4" />
+              {busy && !replay ? "loading…" : "load history"}
+            </button>
+            <label className="relative flex items-center rounded-full bg-white/10 text-foreground">
+              <CalendarDays className="pointer-events-none ml-3 size-4" />
+              <select
+                data-probe="replay-date"
+                value={selected}
+                onChange={event => setSelected(event.target.value)}
+                className="min-w-0 flex-1 cursor-pointer appearance-none bg-transparent px-2 py-2 text-center text-[13px] outline-none"
+              >
+                {[...sessions].reverse().map(session => (
+                  <option key={session.date} value={session.date} className="bg-black">
+                    {session.date === today ? "Today" : fmtDateET(session.startTs)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              data-probe="replay-stop"
+              disabled={!replay?.returnToLive || busy}
+              onClick={() => void clearHistory()}
+              className="col-span-2 flex cursor-pointer items-center justify-center gap-2 rounded bg-[#9ec5f8] px-2 py-2 text-[13px] font-medium text-black transition-colors hover:bg-[#b4d3fa] disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <Trash2 className="size-4" />
+              clear history
+            </button>
+          </div>
+        )}
+
+        <div className="mt-3 flex items-center gap-3 tabular-nums">
+          <Radio className={cn("size-4", replay ? "text-amber-400" : "text-emerald-400")} />
+          <select
+            data-probe="replay-speed"
+            disabled={!replay}
+            value={String(replay?.speed ?? 1)}
+            onChange={event => void postReplay("speed", { value: Number(event.target.value) })}
+            className="cursor-pointer bg-transparent text-[13px] text-foreground outline-none disabled:cursor-default"
           >
-            {replay.playing ? <Pause className="size-4" /> : <Play className="size-4" />}
-          </button>
-          <span data-probe="replay-clock" className="text-[16px] font-semibold tabular-nums text-foreground">
+            {[1, 2, 5, 10, 30].map(value => (
+              <option key={value} value={value} className="bg-black">{value}x</option>
+            ))}
+          </select>
+          <span data-probe="replay-clock" className="text-[15px] font-semibold text-foreground">
             {clockLabel}
           </span>
-          <span className="ml-auto text-[11px] text-muted-foreground">ET</span>
+          <span className="ml-auto text-[10px] text-muted-foreground">ET</span>
         </div>
+
         <input
           data-probe="replay-seek"
           type="range"
-          min={replay.startTs}
-          max={replay.endTs}
-          step={1}
+          min={seekRange?.startTs ?? selectedSession?.startTs ?? 0}
+          max={(seekRange?.endTs ?? selectedEnd) || 1}
+          step={0.05}
           value={sliderClock}
+          disabled={!seekRange || busy}
           onPointerDown={event => {
             dragging.current = true;
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -274,27 +521,69 @@ function Playback({ replay }: { replay: ReplayStatus }) {
             dragging.current = false;
             seek(true);
           }}
+          onKeyUp={event => {
+            if (["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key)) {
+              seek(true);
+            }
+          }}
           onChange={event => {
             const value = Number(event.target.value);
             setSliderClock(value);
             latestSeek.current = value;
-            seek();
+            if (replay) seek();
+            else if (loadedSessionSelected) void activateAndSeek(value);
           }}
-          className="mt-3 h-1.5 w-full cursor-pointer accent-amber-500"
+          className="mt-3 h-1.5 w-full cursor-pointer accent-[#9ec5f8] disabled:cursor-default disabled:opacity-60"
         />
-        <Tabs
-          value={String(replay.speed)}
-          onValueChange={value => void postReplay("speed", Number(value))}
-          className="mt-2"
-        >
-          <TabsList data-probe="replay-speed" className="w-full">
-            {[1, 2, 5, 10, 30].map(value => (
-              <TabsTrigger key={value} value={String(value)}>
-                {value}x
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+
+        <div className="mt-2 flex items-center justify-between">
+          <button
+            disabled={!seekRange || busy}
+            onClick={() => seekRange && seekTo(seekRange.startTs)}
+            className={controlClass}
+            title="Start of loaded history"
+          >
+            <SkipBack className="size-4" />
+          </button>
+          <button
+            disabled={!seekRange || busy}
+            onClick={() => seekTo(sliderClock - 60)}
+            className={controlClass}
+            title="Back 1 minute"
+          >
+            <Rewind className="size-4" />
+          </button>
+          <button
+            data-probe="replay-toggle"
+            disabled={!replay}
+            onClick={() => replay && void postReplay(replay.playing ? "pause" : "play")}
+            className={controlClass}
+            title={replay?.playing ? "Pause history" : "Play history"}
+          >
+            {replay?.playing ? <Pause className="size-5" /> : <Play className="size-5" />}
+          </button>
+          <button
+            disabled={!replay}
+            onClick={() => seekTo(sliderClock + 60)}
+            className={controlClass}
+            title="Forward 1 minute"
+          >
+            <FastForward className="size-4" />
+          </button>
+          <button
+            disabled={!replay}
+            onClick={() => replay && seekTo(replay.endTs)}
+            className={controlClass}
+            title="Latest loaded history"
+          >
+            <SkipForward className="size-4" />
+          </button>
+        </div>
+
+        <div className="mt-1 text-center text-[10px] text-muted-foreground">
+          {replay ? "history loaded · live recording continues" : "live · current RTH ready to scrub"}
+        </div>
+        {error && <div className="mt-2 text-[11px] text-red-400">{error}</div>}
       </div>
     </Section>
   );
@@ -332,9 +621,10 @@ interface Props {
   connected: boolean;
   mock: boolean;
   replay: ReplayStatus | null;
+  liveHistory: [number, number][];
 }
 
-export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: Props) {
+export function Sidebar({ settings, onChange, feeds, connected, mock, replay, liveHistory }: Props) {
   const scope = useUiStore(u => u.scope);
   const setScope = useUiStore(u => u.setScope);
   const view = useUiStore(u => u.sidebarView);
@@ -390,7 +680,7 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
                 className="mr-1 rounded border px-1.5 py-px text-[10px] font-bold tracking-wider"
                 style={{ color: "#f59e0b", borderColor: "#f59e0b" }}
               >
-                REPLAY {replay.date}
+                REPLAY {replay.date} RTH
               </span>
             )}
             {view === "main" && (
@@ -452,8 +742,12 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
               {(() => {
                 const gamma = feeds[`${scope}:gamma`];
                 const profile = feeds[`${scope}:state`];
-                if (!gamma && !profile)
-                  return <div className="px-1.5 text-[12px] text-muted-foreground/60">waiting…</div>;
+                if (!gamma)
+                  return (
+                    <div className="px-1.5 text-[12px] text-muted-foreground/60">
+                      {replay ? "waiting for first RTH convexity snapshot…" : "restoring last convexity snapshot…"}
+                    </div>
+                  );
                 return (
                   <>
                     {gamma && (
@@ -501,7 +795,7 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay }: 
               })}
             </Section>
 
-            {replay && <Playback replay={replay} />}
+            <HistoryPanel replay={replay} liveHistory={liveHistory} />
           </>
         )}
 

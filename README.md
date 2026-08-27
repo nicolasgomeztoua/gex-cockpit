@@ -31,6 +31,12 @@ bun run probe      # UI acceptance probe (server must already be running)
 bun run db:generate
 ```
 
+The live chart always opens with the current New York RTH history already
+loaded and pannable. The sidebar's GexBot-style **History** panel can load
+Today or an older 09:30–16:00 ET session at its latest recorded point, then
+seek, jump, rewind/forward, and play it at 1x–30x. **Clear history** restores
+the newest live state; polling and recording continue while history is loaded.
+
 `bun start` serves `dist/` and builds it automatically when `dist/index.html`
 is missing. In development, Vite proxies every `/api` request — including the
 SSE stream — to the Hono backend. The repo-root `.env.local` is server-only;
@@ -49,6 +55,7 @@ never put the GexBot key in a `VITE_` variable.
 | `VITE_PORT` | `5173` | Vite dev-server port (`bun run dev` only) |
 | `DB_PATH` | `data/gex-cockpit.db` | SQLite database file |
 | `MOCK` | off | `1` = synthetic session seeded from one real snapshot |
+| `REPLAY` | off | Legacy/diagnostic startup replay for one `YYYY-MM-DD`; normal use starts replay from the sidebar |
 
 ## Layout
 
@@ -82,7 +89,7 @@ vite.config.ts  React + Tailwind v4, build output, and dev API proxy
 | `/api/stream` | SSE: full state on connect, deduped snapshots after |
 | `/api/levels` | Latest majors/zero-gamma/net per feed (integration hook, e.g. TradingView levels) |
 | `/api/settings` | GET/PUT the tolerant client-settings JSON object |
-| `/api/replay` | Validated replay controls when `REPLAY=YYYY-MM-DD` is active |
+| `/api/replay` | GET recorded sessions/status; POST start/stop/play/pause/seek/speed controls |
 | `/api/health` | Liveness |
 
 ## Data notes
@@ -100,7 +107,10 @@ vite.config.ts  React + Tailwind v4, build output, and dev API proxy
   3 seconds because establishing provider TLS is measurably slower than one second;
   after rebuilding, the interrupted request is retried at the normal 1-second limit.
 - Spot is GexBot context data, not exchange OHLC — candles are 1-minute buckets of polled ticks.
-- Spot and zero-gamma histories preserve provider timestamps. Gaps longer than
+- Live spot and zero-gamma histories show one New York RTH session
+  (09:30–16:00 ET): today when available after the open, otherwise the latest
+  recorded RTH session. Premarket and overnight rows are excluded. Histories
+  preserve provider timestamps. Gaps longer than
   30 seconds render as proportional whitespace instead of a false connecting line.
 - History lands in `data/gex-cockpit.db` (SQLite, gitignored). Mock mode never writes.
 - Strike-row index semantics (index 1 = volume/state value, index 2 = OI value) were

@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import type { FeedKind, FeedSnapshot, StrikeRow, Ticker } from "../src/shared/types";
+import { rthSessionBounds } from "../src/shared/session";
 
 const path = "/tmp/replay-fixture.db";
 const db = new Database(path, { create: true });
@@ -61,7 +62,13 @@ function snapshot(ticker: Ticker, kind: FeedKind, ts: number, spot: number, step
     const vol = (1 - distance * 0.65) * 1_000_000 * wave;
     const oi = kind === "oi" ? (1 - distance * 0.55) * 1_300_000 * Math.cos(i * 0.55 - step * 0.05) : 0;
     const priors = [1, 5, 10, 15, 30].map(minutes => vol * (1 - minutes * 0.002 + 0.015 * normal()));
-    strikes.push([strike, vol, oi, priors]);
+    if (kind === "gamma") {
+      const callIvol = 0.18 + distance * 0.08 + 0.01 * Math.max(0, wave);
+      const putIvol = 0.18 + distance * 0.09 + 0.01 * Math.max(0, -wave);
+      strikes.push([strike, callIvol, putIvol, priors.slice(0, 3), vol / 1_000_000]);
+    } else {
+      strikes.push([strike, vol, oi, priors]);
+    }
   }
 
   const zeroGamma = kind === "oi" ? spot - 20 * increment + Math.sin(step / 22) * 3 * increment : null;
@@ -88,7 +95,8 @@ function snapshot(ticker: Ticker, kind: FeedKind, ts: number, spot: number, step
   };
 }
 
-const startTs = Date.parse("2024-01-03T14:30:00Z") / 1000;
+const fixtureDate = process.env.REPLAY_FIXTURE_DATE ?? "2024-01-03";
+const startTs = rthSessionBounds(fixtureDate).startTs;
 let ndx = 16_650;
 let qqq = 402;
 
@@ -102,7 +110,7 @@ const seedFixture = db.transaction(() => {
       ["QQQ", qqq],
     ] as const) {
       insertTick.run(ticker, ts, spot);
-      for (const kind of ["state", "oi"] as const) {
+      for (const kind of ["state", "gamma", "oi"] as const) {
         const snap = snapshot(ticker, kind, ts, spot, step);
         insertSnapshot.run(snap.feed, snap.providerTs, snap.fetchedAt, snap.spot, JSON.stringify(snap));
       }
@@ -112,4 +120,4 @@ const seedFixture = db.transaction(() => {
 
 seedFixture();
 db.close();
-console.log(`seeded ${path}: 724 snapshots, 362 spot ticks, 2024-01-03 09:30–10:00 ET`);
+console.log(`seeded ${path}: 1,086 snapshots, 362 spot ticks, ${fixtureDate} 09:30–10:00 ET`);

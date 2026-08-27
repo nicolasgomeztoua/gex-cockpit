@@ -648,7 +648,10 @@ export function GexChart({
         className="pointer-events-none absolute top-2 left-2 z-10 flex items-center gap-2.5 font-mono text-[11px]"
         style={{ color: GEXBOT.textDim }}
       >
-        <span className="rounded bg-black/70 px-2 py-0.5 backdrop-blur-sm">
+        <span
+          data-probe={`chart-status-${label.toLowerCase()}`}
+          className="rounded bg-black/70 px-2 py-0.5 backdrop-blur-sm"
+        >
           <span className="text-[13px] font-bold" style={{ color: GEXBOT.text }}>
             {label}
           </span>

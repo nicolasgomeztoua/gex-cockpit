@@ -147,6 +147,7 @@ function App() {
           connected={s.connected}
           mock={s.mock}
           replay={s.replay}
+          liveHistory={s.spotHistory.NDX.length ? s.spotHistory.NDX : s.spotHistory.QQQ}
         />
       </SidebarProvider>
     </TooltipProvider>

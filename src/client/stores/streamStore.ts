@@ -8,6 +8,7 @@ import type {
   ConversionTicker,
   Ticker,
 } from "../../shared/types";
+import { appendLiveSessionPoint } from "../../shared/session";
 
 export interface StreamState {
   connected: boolean;
@@ -83,23 +84,20 @@ export function startStream(): void {
       let zgHistory = s.zgHistory;
       if (snap.status === "live") {
         const series = s.spotHistory[snap.ticker];
-        const last = series[series.length - 1];
-        if (!last || last[0] < snap.providerTs) {
+        const nextSeries = appendLiveSessionPoint(series, [snap.providerTs, snap.spot]);
+        if (nextSeries !== series) {
           spotHistory = {
             ...s.spotHistory,
-            [snap.ticker]: [...series, [snap.providerTs, snap.spot] as [number, number]],
+            [snap.ticker]: nextSeries,
           };
         }
-        if (snap.kind === "oi" && snap.majors.zeroGamma) {
+        if (snap.kind === "oi" && snap.majors.zeroGamma !== null) {
           const zgSeries = s.zgHistory[snap.ticker];
-          const lastZg = zgSeries[zgSeries.length - 1];
-          if (!lastZg || lastZg[0] < snap.providerTs) {
+          const nextZgSeries = appendLiveSessionPoint(zgSeries, [snap.providerTs, snap.majors.zeroGamma]);
+          if (nextZgSeries !== zgSeries) {
             zgHistory = {
               ...s.zgHistory,
-              [snap.ticker]: [
-                ...zgSeries,
-                [snap.providerTs, snap.majors.zeroGamma] as [number, number],
-              ],
+              [snap.ticker]: nextZgSeries,
             };
           }
         }

@@ -62,13 +62,24 @@ export interface SpotTick {
 }
 
 export interface ReplayStatus {
+  /** New York date whose 09:30–16:00 RTH window is being replayed. */
   date: string;
   playing: boolean;
   speed: 1 | 2 | 5 | 10 | 30;
+  /** true for an in-app replay that can return to the still-running live feed */
+  returnToLive: boolean;
   /** virtual replay clock, epoch seconds */
   clock: number;
   startTs: number;
   endTs: number;
+}
+
+export interface ReplaySession {
+  /** New York date of this 09:30–16:00 RTH session. */
+  date: string;
+  startTs: number;
+  endTs: number;
+  snapshotCount: number;
 }
 
 export interface InitPayload {

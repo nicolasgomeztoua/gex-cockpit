@@ -6,7 +6,6 @@ import { z } from "zod";
 import { loadClientSettings, saveClientSettings, spotHistory, zgHistory } from "./db";
 import {
   MOCK,
-  REPLAY_DATE,
   mockSpotHistory,
   mockZgHistory,
   conversions,
@@ -14,7 +13,15 @@ import {
   subscribe,
   subscribeConversions,
 } from "./poller";
-import { controlReplay, replayInitPayload, subscribeReplay } from "./replay";
+import {
+  activateReplay,
+  controlReplay,
+  replayInitPayload,
+  replaySessions,
+  replayStatus,
+  stopReplay,
+  subscribeReplay,
+} from "./replay";
 import type { InitPayload } from "../shared/types";
 
 /** Client settings are an opaque blob; only the envelope is policed. */
@@ -29,12 +36,13 @@ const MAX_SETTINGS_BYTES = 256 * 1024;
 const settingsBody = z.looseObject({});
 
 const replayBody = z.object({
-  action: z.enum(["play", "pause", "seek", "speed"]),
+  action: z.enum(["start", "stop", "play", "pause", "seek", "speed"]),
   value: z.number().optional(),
+  date: z.iso.date().optional(),
 });
 
 function initPayload(): InitPayload {
-  if (REPLAY_DATE) return replayInitPayload();
+  if (replayStatus()) return replayInitPayload();
   return {
     feeds: snapshots(),
     conversions: conversions(),
@@ -165,22 +173,27 @@ export const api = new Hono()
     },
   )
 
+  .get("/api/replay", c =>
+    c.json({ replay: replayStatus(), sessions: replaySessions() }),
+  )
+
   .post(
     "/api/replay",
-    // Checked ahead of validation so a request to a live server always reads as
-    // "wrong mode" rather than "bad body".
-    async (c, next) => {
-      if (!REPLAY_DATE) return c.json({ error: "replay mode is not active" }, 409);
-      await next();
-    },
     zValidator("json", replayBody, (result, c) => {
       if (!result.success) {
         return c.json({ error: result.error.issues[0]?.message ?? "invalid request body" }, 400);
       }
     }),
     c => {
-      const { action, value } = c.req.valid("json");
+      const { action, value, date } = c.req.valid("json");
       try {
+        if (action === "start") {
+          if (!date) return c.json({ error: "start requires a YYYY-MM-DD date" }, 400);
+          return c.json({ ok: true, replay: activateReplay(date, value) });
+        }
+        if (action === "stop") {
+          return c.json({ ok: true, replay: stopReplay() });
+        }
         return c.json({ ok: true, replay: controlReplay(action, value) });
       } catch (err) {
         return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);

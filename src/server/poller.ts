@@ -6,7 +6,7 @@ import {
   GEX_STATE_AGGREGATION,
   warmGexbotConnection,
 } from "./gexbot";
-import { persistSnapshot } from "./db";
+import { latestStoredSnapshots, persistSnapshot } from "./db";
 import { PollRetryState, formatRetryDelay } from "./poll-retry";
 import type {
   ConversionTicker,
@@ -42,10 +42,28 @@ const TICKERS = [...new Set(FEEDS.map(f => f.ticker))];
 type Listener = (s: FeedSnapshot) => void;
 type ConversionListener = (c: FuturesConversion) => void;
 
+// Live polling never stops during an in-app replay. Keep its latest state in a
+// shadow store while the displayed store is owned by the replay clock.
+const liveStore = new Map<FeedKey, FeedSnapshot>();
 const store = new Map<FeedKey, FeedSnapshot>();
 const conversionStore = new Map<ConversionTicker, FuturesConversion>();
 const listeners = new Set<Listener>();
 const conversionListeners = new Set<ConversionListener>();
+let replayDisplayActive = false;
+
+if (!MOCK && !REPLAY_DATE) {
+  const activeFeeds = new Set(FEEDS.map(feed => `${feed.ticker}:${feed.kind}`));
+  for (const stored of latestStoredSnapshots()) {
+    if (!activeFeeds.has(stored.feed)) continue;
+    const lastGood: FeedSnapshot = {
+      ...stored,
+      status: "error",
+      error: "last recorded snapshot; waiting for live provider update",
+    };
+    liveStore.set(lastGood.feed, lastGood);
+    store.set(lastGood.feed, lastGood);
+  }
+}
 
 export function subscribe(fn: Listener): () => void {
   listeners.add(fn);
@@ -70,7 +88,25 @@ export function replaceSnapshots(next: FeedSnapshot[]): void {
   for (const snap of next) store.set(snap.feed, snap);
 }
 
+export function beginReplayDisplay(next: FeedSnapshot[]): void {
+  replayDisplayActive = true;
+  replaceSnapshots(next);
+}
+
+export function restoreLiveDisplay(): FeedSnapshot[] {
+  replayDisplayActive = false;
+  replaceSnapshots([...liveStore.values()]);
+  return snapshots();
+}
+
 export function publishSnapshot(snap: FeedSnapshot): void {
+  store.set(snap.feed, snap);
+  emit(snap);
+}
+
+function publishLiveSnapshot(snap: FeedSnapshot): void {
+  liveStore.set(snap.feed, snap);
+  if (replayDisplayActive) return;
   store.set(snap.feed, snap);
   emit(snap);
 }
@@ -86,14 +122,17 @@ async function pollLoop(ticker: Ticker, kind: FeedKind): Promise<void> {
   while (true) {
     try {
       const snap = await fetchFeed(ticker, kind);
-      const prev = store.get(key);
+      const prev = liveStore.get(key);
       // Dedupe on the provider timestamp: only a real data update reaches
       // the store, the DB, and the UI. Poll ticks with unchanged data are
       // still used to clear a previous error state.
       if (!prev || prev.providerTs !== snap.providerTs || prev.status === "error") {
-        store.set(key, snap);
+        liveStore.set(key, snap);
         if (!MOCK) persistSnapshot(snap);
-        emit(snap);
+        if (!replayDisplayActive) {
+          store.set(key, snap);
+          emit(snap);
+        }
       }
       const recoveredFailures = retry.recovered();
       if (recoveredFailures > 0) {
@@ -109,12 +148,11 @@ async function pollLoop(ticker: Ticker, kind: FeedKind): Promise<void> {
       console.error(
         `[poller] ${key}: ${msg} (failure ${decision.failureCount}; retrying in ${formatRetryDelay(delay)})`,
       );
-      const prev = store.get(key);
+      const prev = liveStore.get(key);
       if (prev && prev.status !== "error") {
         // keep last-good data, just flag it
         const flagged = { ...prev, status: "error" as const, error: msg };
-        store.set(key, flagged);
-        emit(flagged);
+        publishLiveSnapshot(flagged);
       }
     }
     await Bun.sleep(delay);
@@ -136,7 +174,9 @@ async function conversionLoop(ticker: ConversionTicker): Promise<void> {
         || prev.additive !== conversion.additive
         || prev.futureContract !== conversion.futureContract
       ) {
-        for (const fn of conversionListeners) fn(conversion);
+        if (!replayDisplayActive) {
+          for (const fn of conversionListeners) fn(conversion);
+        }
         console.info(
           `[poller] ${ticker}→${conversion.futureContract}: conversion ${conversion.multiplier.toFixed(6)}x ${conversion.additive >= 0 ? "+" : "−"} ${Math.abs(conversion.additive).toFixed(4)}`,
         );
@@ -336,8 +376,7 @@ async function startMock(): Promise<void> {
           netGexOI: strikes.reduce((a, [, , o]) => a + o, 0),
           status: "live",
         };
-        store.set(key, snap);
-        emit(snap);
+        publishLiveSnapshot(snap);
       }
     }
   }, 3000);
