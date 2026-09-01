@@ -14,7 +14,6 @@ import {
   Settings,
   SkipBack,
   SkipForward,
-  Trash2,
   Type,
 } from "lucide-react";
 import {
@@ -235,6 +234,7 @@ function HistoryPanel({
   const activating = useRef(false);
   const seekInFlight = useRef(false);
   const queuedSeek = useRef<number | null>(null);
+  const lastReplayPosition = useRef<{ date: string; clock: number } | null>(null);
   const today = etDate(Math.floor(Date.now() / 1_000));
   const loadedStart = liveHistory[0]?.[0] ?? null;
   const loadedEnd = liveHistory.at(-1)?.[0] ?? null;
@@ -273,6 +273,10 @@ function HistoryPanel({
   useEffect(() => {
     if (replay?.date) setSelected(replay.date);
   }, [replay?.date]);
+
+  useEffect(() => {
+    if (replay) lastReplayPosition.current = { date: replay.date, clock: replay.clock };
+  }, [replay?.date, replay?.clock]);
 
   const selectedSession = sessions.find(session => session.date === selected);
   const selectedEnd = selectedSession?.endTs ?? 0;
@@ -415,19 +419,28 @@ function HistoryPanel({
     else void activateAndSeek(bounded);
   };
 
-  const clearHistory = async () => {
+  const returnToLive = async () => {
     if (!replay?.returnToLive || busy) return;
     setBusy(true);
     setError("");
     try {
       const response = await postReplay("stop");
       const payload = await response.json();
-      if (!response.ok) setError("error" in payload ? payload.error : "Could not clear history");
+      if (!response.ok) setError("error" in payload ? payload.error : "Could not return to live mode");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
     }
+  };
+
+  const switchMode = async () => {
+    if (replay) {
+      await returnToLive();
+      return;
+    }
+    const last = lastReplayPosition.current;
+    await loadHistory(last?.date === selected ? last.clock : undefined);
   };
 
   const clockLabel = sliderClock > 0 ? new Date(sliderClock * 1000).toLocaleTimeString("en-US", {
@@ -477,17 +490,39 @@ function HistoryPanel({
             <button
               data-probe="replay-stop"
               disabled={!replay?.returnToLive || busy}
-              onClick={() => void clearHistory()}
+              onClick={() => void returnToLive()}
               className="col-span-2 flex cursor-pointer items-center justify-center gap-2 rounded bg-[#9ec5f8] px-2 py-2 text-[13px] font-medium text-black transition-colors hover:bg-[#b4d3fa] disabled:cursor-not-allowed disabled:opacity-35"
             >
-              <Trash2 className="size-4" />
-              clear history
+              <ArrowLeft className="size-4" />
+              return to live
             </button>
           </div>
         )}
 
         <div className="mt-3 flex items-center gap-3 tabular-nums">
-          <Radio className={cn("size-4", replay ? "text-amber-400" : "text-emerald-400")} />
+          <button
+            type="button"
+            data-probe="replay-mode-toggle"
+            disabled={busy || (replay ? !replay.returnToLive : !selected)}
+            onClick={() => void switchMode()}
+            aria-pressed={!!replay}
+            aria-label={replay ? "Return to live mode" : "Switch to replay mode"}
+            title={
+              replay
+                ? replay.returnToLive
+                  ? "Return to live"
+                  : "Startup replay cannot return to live"
+                : "Switch to replay"
+            }
+            className={cn(
+              "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-35",
+              replay
+                ? "bg-amber-400/15 text-amber-400 hover:bg-amber-400/25"
+                : "bg-emerald-400/15 text-emerald-400 hover:bg-emerald-400/25",
+            )}
+          >
+            <Radio className="size-4" />
+          </button>
           <select
             data-probe="replay-speed"
             disabled={!replay}
