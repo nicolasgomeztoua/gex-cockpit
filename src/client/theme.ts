@@ -83,17 +83,12 @@ export interface LevelConfig {
   alert: boolean;
 }
 
-export type AlertMode = "approach" | "cross" | "both";
 export type AlertSound = "off" | "ping" | "chime" | "blip";
-/** once = single notification; repeat3 = TV-style ×3; untilFocus = renotify until the window is refocused */
-export type AlertNotify = "once" | "repeat3" | "untilFocus";
+/** Persistent delivery is acknowledged when the cockpit regains focus. */
+export type AlertNotify = "once" | "untilFocus";
 
 export interface AlertSettings {
   enabled: boolean;
-  mode: AlertMode;
-  /** in `distanceUnit` */
-  distance: number;
-  distanceUnit: "points" | "percent";
   cooldownSec: number;
   sound: AlertSound;
   notify: AlertNotify;
@@ -148,9 +143,6 @@ export const DEFAULT_SETTINGS: LayerSettings = {
   unit: "spot",
   alerts: {
     enabled: false,
-    mode: "both",
-    distance: 10,
-    distanceUnit: "points",
     cooldownSec: 300,
     sound: "ping",
     notify: "once",
@@ -176,6 +168,10 @@ export function deepMerge<T extends Record<string, any>>(dst: T, src: unknown): 
 export function settingsFromUnknown(raw: unknown): LayerSettings {
   const out = structuredClone(DEFAULT_SETTINGS);
   deepMerge(out, raw);
+  out.alerts.notify = out.alerts.notify === "untilFocus" ? "untilFocus" : "once";
+  if (!["off", "ping", "chime", "blip"].includes(out.alerts.sound)) out.alerts.sound = "ping";
+  if (!Number.isFinite(out.alerts.cooldownSec)) out.alerts.cooldownSec = 300;
+  out.alerts.cooldownSec = Math.max(0, Math.min(86400, out.alerts.cooldownSec));
   return out;
 }
 
@@ -188,5 +184,5 @@ export function migrateV3(v3: Record<string, unknown>): LayerSettings {
     deepMerge(out.tickers[t], v3); // chartType/bars/priors/axisLabels
     deepMerge(out.tickers[t].levels, v3.levels);
   }
-  return out;
+  return settingsFromUnknown(out);
 }

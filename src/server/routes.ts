@@ -1,3 +1,7 @@
+import { enabledFeeds, enabledRules } from "./alert-engine";
+import { deliverNativeAlert } from "./alert-delivery";
+import { settingsFromUnknown } from "../client/theme";
+import { alertStore, syncAlertSettings } from "./alerts";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -10,6 +14,7 @@ import {
   mockZgHistory,
   conversions,
   snapshots,
+  liveSnapshots,
   subscribe,
   subscribeConversions,
 } from "./poller";
@@ -22,7 +27,7 @@ import {
   stopReplay,
   subscribeReplay,
 } from "./replay";
-import type { InitPayload } from "../shared/types";
+import type { InitPayload, FeedSnapshot } from "../shared/types";
 
 /** Client settings are an opaque blob; only the envelope is policed. */
 const MAX_SETTINGS_BYTES = 256 * 1024;
@@ -136,6 +141,33 @@ export const api = new Hono()
     }),
   )
 
+  .get("/api/alerts", c => {
+    const settings = settingsFromUnknown(loadClientSettings());
+    const expected = enabledFeeds(settings);
+    const fresh = new Set(liveSnapshots().filter(s => s.status === "live" && Date.now() - s.providerTs * 1000 <= 120_000).map(s => s.feed));
+    return c.json({
+      events: alertStore.recent(),
+      pending: alertStore.pending(),
+      delivery: process.platform === "darwin" ? "macOS" : "unsupported",
+      monitoring: !MOCK && !process.env.REPLAY,
+      enabled: settings.alerts.enabled,
+      selected: enabledRules(settings).size,
+      fresh: expected.size > 0 && [...expected].every(feed => fresh.has(feed as FeedSnapshot["feed"])),
+    });
+  })
+  .post("/api/alerts/test", zValidator("json", z.object({})), async c => {
+    const settings = settingsFromUnknown(loadClientSettings());
+    try {
+      await deliverNativeAlert({ id: 0, rule: "test", ticker: "NDX", level: "mlg", price: 0, spot: 0,
+        createdAt: Date.now(), notify: "once", sound: settings.alerts.sound, deliveries: 0,
+        nextAt: 0, acknowledged: 0, error: null });
+      return c.json({ ok: true });
+    } catch { return c.json({ error: "Desktop notification failed" }, 503); }
+  })
+  .post("/api/alerts/ack", zValidator("json", z.object({ through: z.number().int().nonnegative() })), c => {
+    alertStore.acknowledge(c.req.valid("json").through);
+    return c.json({ ok: true });
+  })
   .get("/api/settings", c => c.json({ settings: loadClientSettings() }))
 
   .put(
@@ -169,6 +201,7 @@ export const api = new Hono()
         return c.json({ error: "settings payload too large" }, 413);
       }
       saveClientSettings(json);
+      syncAlertSettings();
       return c.json({ ok: true });
     },
   )

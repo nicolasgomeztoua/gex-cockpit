@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { mkdirSync } from "node:fs";
 import { and, asc, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
@@ -14,8 +15,10 @@ import {
 
 export const DB_PATH = process.env.DB_PATH ?? "data/gex-cockpit.db";
 
-const sqlite = new Database(DB_PATH, { create: true });
-sqlite.exec("PRAGMA journal_mode = WAL;");
+if (DB_PATH !== ":memory:") mkdirSync(dirname(DB_PATH), { recursive: true });
+
+export const sqlite = new Database(DB_PATH, { create: true });
+sqlite.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;");
 
 export const db = drizzle(sqlite, { schema: { appSettings, snapshots, spotTicks } });
 

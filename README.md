@@ -25,7 +25,7 @@ Other commands:
 bun run dev        # Vite HMR app on :5173 + Hono/Bun API on :4321
 MOCK=1 bun start   # synthetic session (weekends) — badged, nothing persisted
 bun run typecheck
-bun run test       # focused Vitest unit tests
+bun run test       # Vitest + Bun/SQLite alert regression tests
 bun run build      # production frontend bundle
 bun run probe      # UI acceptance probe (server must already be running)
 bun run db:generate
@@ -89,6 +89,9 @@ vite.config.ts  React + Tailwind v4, build output, and dev API proxy
 | `/api/stream` | SSE: full state on connect, deduped snapshots after |
 | `/api/levels` | Latest majors/zero-gamma/net per feed (integration hook, e.g. TradingView levels) |
 | `/api/settings` | GET/PUT the tolerant client-settings JSON object |
+| `/api/alerts` | Backend delivery status, pending alerts, and last 50 events |
+| `/api/alerts/ack` | POST acknowledge delivered persistent alerts through a seen event ID |
+| `/api/alerts/test` | POST `{}` to test macOS notification and sound |
 | `/api/replay` | GET recorded sessions/status; POST start/stop/play/pause/seek/speed controls |
 | `/api/health` | Liveness |
 
@@ -115,3 +118,45 @@ vite.config.ts  React + Tailwind v4, build output, and dev API proxy
 - History lands in `data/gex-cockpit.db` (SQLite, gitignored). Mock mode never writes.
 - Strike-row index semantics (index 1 = volume/state value, index 2 = OI value) were
   verified against live responses; see `docs/original-brief.md` for the details.
+
+## Level alerts
+
+Select levels with their bell icons, then enable **Level Alerts**. There is one
+trigger: a fresh price sample touches the level, or two successive samples pass
+through it. Being merely nearby does not alert. Each level uses the spot and level
+from its own provider feed, in native NDX/QQQ units; display conversions cannot
+cause alerts. A changed level or a data gap over two minutes starts a new baseline.
+The cooldown limits repeat touches; price sitting on a level does not keep firing.
+
+Choose **once** or **until refocus**. Persistent alerts repeat every 25 seconds
+without a repeat cap, until a visible, focused cockpit acknowledges them. Alerts
+that fire while the cockpit is already focused deliver once and are acknowledged
+on the next focus heartbeat. Switching off alerts or a level cancels its pending
+notifications. Existing alert events keep their original sound/repeat preference.
+
+The backend evaluates live polls and sends macOS notifications via `osascript`
+and sounds via `afplay`. Browser notifications, autoplay permission, open tabs,
+and browser timers do not drive detection or delivery. Trigger observations,
+cooldowns, pending events, retry times and acknowledgments are persisted in the
+same SQLite database, with transactional enqueue and full synchronous WAL writes.
+Delivery retries after failures and resumes after a backend restart; an interrupted
+native delivery can repeat once because macOS has no transactional delivery receipt.
+The alert store owns its idempotent table upgrades independently of the historical
+snapshot migrations. Preserve the database and its WAL when backing it up.
+
+Use **Test desktop alert** to check the local desktop path. macOS must allow
+Script Editor notifications; Focus/Do Not Disturb and system volume still affect
+what you see/hear. A successful command confirms submission to macOS, not that a
+banner was visible. Failed commands remain queued and are shown in the alert panel.
+Settings writes retry, and the UI shows when saving has not been confirmed.
+
+The **Mac must be awake and the backend running** (`bun start`); this is a local
+app, not a hosted alert service. It does not install an automatic restart/login
+service. SQLite preserves pending work when a process stops but cannot monitor
+new prices while it is stopped. GexBot polling defaults to 10 seconds and is not
+an exchange tick stream: a touch and reversal entirely between samples is not
+observable. In-app replay continues monitoring the independent live feed; mock
+and startup replay modes do not evaluate or deliver live alerts.
+
+Implementation references: [Bun SQLite transactions](https://bun.sh/docs/runtime/sqlite),
+[macOS notification scripting](https://developer.apple.com/library/archive/documentation/LanguagesUtilities/Conceptual/MacAutomationScriptingGuide/DisplayNotifications.html).

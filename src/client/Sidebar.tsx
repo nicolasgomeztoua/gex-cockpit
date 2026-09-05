@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Bell,
@@ -32,7 +32,7 @@ import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Input } from "./components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { rpc } from "./api";
-import { ensureAudio, playSound } from "./alerts/sounds";
+import { AlertStatus } from "./alerts/AlertStatus";
 import { SIDEBAR_MAX_W, SIDEBAR_MIN_W, useUiStore } from "./stores/uiStore";
 import {
   GEXBOT,
@@ -62,11 +62,6 @@ const fmtTimeET = (sec: number) =>
     second: "2-digit",
     hour12: true,
   });
-
-// Notification.permission changes outside React; re-read it per render pass
-const notifPermission = () =>
-  typeof Notification === "undefined" ? "unsupported" : Notification.permission;
-const subscribeNoop = () => () => {};
 
 function Section(props: { title: string; color: string; children: ReactNode }) {
   return (
@@ -678,7 +673,6 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
   const setLevel = (key: LevelKey, patch: Partial<LevelConfig>) =>
     setTicker({ levels: { ...ts.levels, [key]: { ...ts.levels[key], ...patch } } });
 
-  const permission = useSyncExternalStore(subscribeNoop, notifPermission, notifPermission);
   const S = GEXBOT.state;
   const C = GEXBOT.classic;
   const stateKeys = LEVEL_KEYS.filter(k => LEVEL_META[k].section === "state");
@@ -901,54 +895,15 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
               label="Level Alerts"
               on={settings.alerts.enabled}
               onChange={v => {
-                if (v) {
-                  ensureAudio();
-                  if (typeof Notification !== "undefined" && Notification.permission === "default") {
-                    void Notification.requestPermission();
-                  }
-                }
                 setAlerts({ enabled: v });
               }}
             />
+            <AlertStatus />
             {settings.alerts.enabled && (
               <>
-                <Field label="trigger">
-                  <Tabs
-                    className="flex-1"
-                    value={settings.alerts.mode}
-                    onValueChange={v => setAlerts({ mode: v as LayerSettings["alerts"]["mode"] })}
-                  >
-                    <TabsList className="w-full">
-                      <TabsTrigger value="approach">near</TabsTrigger>
-                      <TabsTrigger value="cross">cross</TabsTrigger>
-                      <TabsTrigger value="both">both</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-                </Field>
-                {settings.alerts.mode !== "cross" && (
-                  <Field label="distance">
-                    <Input
-                      type="number"
-                      min={0}
-                      step={settings.alerts.distanceUnit === "percent" ? 0.01 : 1}
-                      value={settings.alerts.distance}
-                      onChange={e => setAlerts({ distance: Math.max(0, Number(e.target.value) || 0) })}
-                      className="w-16"
-                    />
-                    <Tabs
-                      className="flex-1"
-                      value={settings.alerts.distanceUnit}
-                      onValueChange={v =>
-                        setAlerts({ distanceUnit: v as LayerSettings["alerts"]["distanceUnit"] })
-                      }
-                    >
-                      <TabsList className="w-full">
-                        <TabsTrigger value="points">pts</TabsTrigger>
-                        <TabsTrigger value="percent">%</TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-                  </Field>
-                )}
+                <div className="px-1.5 py-1 text-[12px] text-muted-foreground">
+                  Alert when price touches a selected level. Passing through it between price updates counts too.
+                </div>
                 <Field label="cooldown">
                   <Input
                     type="number"
@@ -970,13 +925,12 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
                   >
                     <TabsList className="w-full">
                       <TabsTrigger value="once">once</TabsTrigger>
-                      <TabsTrigger value="repeat3">3×</TabsTrigger>
-                      <TabsTrigger value="untilFocus">focus</TabsTrigger>
+                      <TabsTrigger value="untilFocus">until refocus</TabsTrigger>
                     </TabsList>
                   </Tabs>
                 </Field>
                 <div className="px-1.5 py-0.5 text-[11px] text-muted-foreground/50">
-                  3× repeats like TradingView; focus renotifies until this window is refocused
+                  Until refocus repeats every 25 seconds, with no time limit.
                 </div>
                 <Field label="sound">
                   <Tabs
@@ -991,26 +945,10 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
                       <TabsTrigger value="blip">blip</TabsTrigger>
                     </TabsList>
                   </Tabs>
-                  {settings.alerts.sound !== "off" && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() => {
-                            ensureAudio();
-                            playSound(settings.alerts.sound);
-                          }}
-                          className="flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-foreground"
-                        >
-                          <Play className="size-3.5" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>Preview sound</TooltipContent>
-                    </Tooltip>
-                  )}
                 </Field>
                 <div className="px-1.5 py-0.5 text-[11px] text-muted-foreground/70">
-                  notifications: {permission}
-                  {permission === "denied" && " — enable in browser settings"}
+                  Alerts run on this Mac even with the browser closed. Keep the Mac awake and the backend running.
+                  Allow Script Editor notifications in macOS settings.
                 </div>
                 <div className="px-1.5 py-0.5 text-[11px] text-muted-foreground/50">
                   pick levels per ticker with the <Bell className="inline size-3" /> icon in settings
