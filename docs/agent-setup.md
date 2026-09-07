@@ -24,7 +24,7 @@ Explain both options and let the user choose:
 
 Prefer a published stable release when one exists; do not invent a release tag. A release checkout may be detached: that is normal and it should use the release update procedure, not `git pull`. If using main, record the commit and explain that it contains development changes. The maintainer source is the URL above; a fork should use it as `upstream` and keep its own `origin` intact.
 
-Use `.bun-version` (currently 1.3.12) for repeatable setup. Consult [official Bun installation instructions](https://bun.com/docs/installation) for the OS and version before installing. Bun's default installer may install a newer version; select the recorded version deliberately. Explain the download and installation before executing it. Do not install Node, Docker, Clerk or a cloud database for local use.
+Use `.bun-version` (currently 1.3.12) for repeatable setup. Consult [official Bun installation instructions](https://bun.com/docs/installation) for the OS and version before installing. Bun's default installer may install a newer version; select the recorded version deliberately. Explain the download and installation before executing it. Bun is sufficient for local use; no separate database server is needed.
 
 ## 3. Configure privately
 

@@ -67,6 +67,5 @@ Lee la [guía de uso en español](docs/trader-guide.md#español). En Mac, prueba
 - [Guía de controles en español](docs/trader-guide.md#español)
 - [Configuración técnica](docs/technical-reference.md)
 - [Contribuciones](CONTRIBUTING.md) · [Seguridad](SECURITY.md)
-- [Posible versión alojada en Vercel](docs/hosting.md): propuesta, todavía no disponible.
 
 Licencia MIT: [LICENSE](LICENSE). Las bibliotecas mantienen sus propias licencias: [avisos de terceros](THIRD_PARTY_NOTICES.md).

@@ -71,7 +71,6 @@ When you want changes, ask your agent to follow [updates and backups](docs/updat
 - [What every main control does / Guía de uso](docs/trader-guide.md)
 - [Configuration, commands and architecture](docs/technical-reference.md)
 - [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
-- [Hosted pilot / Vercel assessment](docs/hosting.md) — proposal, not a deployed service
 - [Release checklist](docs/releasing.md)
 
 MIT licensed; see [LICENSE](LICENSE). Third-party libraries retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). `private: true` in package.json prevents accidental npm publication; it does not restrict the source license.

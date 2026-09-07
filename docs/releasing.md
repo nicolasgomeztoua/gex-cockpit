@@ -1,6 +1,6 @@
 # Maintainer release checklist
 
-This repository contains local release preparation. Publishing GitHub visibility, tags, releases and hosted services are separate actions.
+This repository contains local release preparation. Before publication, review repository visibility, the release tag and release notes.
 
 ## Before making the repository public
 
@@ -21,6 +21,6 @@ This repository contains local release preparation. Publishing GitHub visibility
 
 ## Suggested first release notes
 
-English: Local NDX/QQQ GexBot dashboard with optional updates, recorded-session replay and Mac desktop level alerts. Includes English/Spanish agent-guided installation. Bring your own authorized GexBot API access. Interface labels remain English. No hosted service or automatic updates. Windows/Linux end-to-end setup remains unverified; desktop notifications require macOS.
+English: Local NDX/QQQ GexBot dashboard with optional updates, recorded-session replay and Mac desktop level alerts. Includes English/Spanish agent-guided installation. Bring your own authorized GexBot API access. Interface labels remain English. Updates are optional. Windows/Linux end-to-end setup remains unverified; desktop notifications require macOS.
 
-Español: Panel local de GexBot para NDX/QQQ, con actualizaciones opcionales, reproducción de sesiones grabadas y alertas de escritorio en Mac. Instalación guiada por un agente en español o inglés. Necesitas tu propio acceso API autorizado de GexBot. La interfaz sigue en inglés. Sin servicio alojado ni actualizaciones automáticas. La instalación completa en Windows/Linux aún no está verificada; las alertas necesitan macOS.
+Español: Panel local de GexBot para NDX/QQQ, con actualizaciones opcionales, reproducción de sesiones grabadas y alertas de escritorio en Mac. Instalación guiada por un agente en español o inglés. Necesitas tu propio acceso API autorizado de GexBot. La interfaz sigue en inglés. Las actualizaciones son opcionales. La instalación completa en Windows/Linux aún no está verificada; las alertas necesitan macOS.
