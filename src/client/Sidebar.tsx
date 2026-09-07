@@ -967,6 +967,15 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
           />
           {connected ? "stream connected" : "stream disconnected"}
         </div>
+        <a
+          href="https://www.tradingview.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[10px] text-muted-foreground hover:underline"
+        >
+          TradingView Lightweight Charts™<br />
+          Copyright (с) 2025 TradingView, Inc.
+        </a>
       </SidebarFooter>
     </SidebarRoot>
   );
