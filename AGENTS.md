@@ -1,32 +1,57 @@
-# Instructions for AI agents
+# AI agent instructions
 
-## First interaction: language before anything else
+## Ask the language first
 
-For a new user's installation/onboarding, your first response must be exactly:
+For a new user's installation, your first response must be:
 
 > ¿Prefieres que te ayude en español o en inglés? / Would you prefer Spanish or English?
 
-Wait for their answer before running commands, installing anything, requesting credentials, or explaining setup. If the user already selected a language in this conversation, respect it and do not ask again. This is a conversational setup requirement, not a request to translate the app UI.
+Wait for their answer before commands or setup explanations. If they already chose a language in this conversation, keep using it. Explain everything in that language, with simple words. UI labels remain English; translate their meaning as you show the controls.
 
-Then read [docs/agent-setup.md](docs/agent-setup.md) and guide the user through it in their chosen language. Do the technical work you are authorized to do. Explain what each step accomplishes without assuming they know terminals, servers, Git, or API keys. Do not simply give a trader a developer checklist.
+## Set up the app
+
+1. Identify the operating system and whether an installation already exists. Explain that Bun runs the app, the browser displays it, and a local SQLite file stores settings and history. Native alerts require macOS; leave Level Alerts off on Windows/Linux, where full setup is not yet verified.
+2. Ask whether they prefer an **agent-managed Git copy with optional updates** or a **ZIP without Git**. Explain that neither updates automatically, and a happy user never needs to use Git. Clone the official public source using HTTPS, or extract its source ZIP into a permanent folder. Record the release/commit or ZIP source. Do not invent a release tag or require a fork/account to clone a public repository.
+3. Check `bun --version` against `.bun-version`. If missing or different, use the [official Bun installation instructions](https://bun.com/docs/installation) for their system and explain what you are installing.
+4. Copy `.env.example` to `.env.local` only if no configuration exists. Have the user enter their GexBot API key in a **local editor**, never chat or a terminal command. Check presence without printing the value. On Unix, use `chmod 600 .env.local`. Confirm they have the required provider access; no subscription is included.
+5. From the folder containing `package.json`, run the commands below. Explain that they download dependencies, check the code, prepare the interface, then start collecting data.
+
+```sh
+bun install --frozen-lockfile
+bun run typecheck
+bun run build
+bun start
+```
+
+Open **http://127.0.0.1:4321** (or the configured port). The database is created automatically. Explain that the terminal must stay open and the computer awake; Ctrl+C stops the app, while closing the browser does not. Make sure the user can start it themselves after your agent session ends.
+
+## Verify and explain
+
+- Check the page loads and `/api/health` responds. Then check real NDX/QQQ State, Gamma and OI feeds through `/api/levels` and the charts. A connected stream or healthy server alone does not prove fresh market data.
+- During trading hours, confirm provider timestamps advance. If closed-market conditions or missing access prevent verification, say what is pending and how to retry. `MOCK=1` still contacts GexBot and must never be presented as live data or an offline demo.
+- Change a harmless display setting, reload, confirm it persists, then restore it.
+- Walk through [the app guide](docs/trader-guide.md) in their chosen language: chart layers, levels, NQ conversion, history/replay, returning to live, settings and alerts. A new installation has no recorded history; test replay once it has recorded a session.
+- On Mac, use **Test desktop alert** during alert setup and ask the user to confirm the banner/sound. Check Script Editor notification permissions, Focus and volume if needed. Explain that alerts use sampled native prices, can miss brief touches, and require the backend to stay running. Normal in-app replay continues monitoring live prices.
+
+## Fix common setup problems
+
+| Problem | Check |
+| --- | --- |
+| Bun not found | Reopen the terminal; follow Bun's official PATH instructions. |
+| Install or subprocess test failure | Verify Bun and stale dependencies in a fresh source folder. Preserve the lockfile and user data. |
+| Missing key / 401 / 403 | Check the local file location, nonempty value, environment overrides and provider access without displaying the key. |
+| Blank charts | Check provider errors and timestamps. A new database has no past recordings. |
+| Port in use / old interface | Identify the running process and its folder before stopping anything. Rebuild after updates. |
+| Missing history | Check the working directory and `DB_PATH`; never delete data to fix it. |
+
+See [configuration](docs/configuration.md) for optional settings. Keep `MOCK` and `REPLAY` unset for normal live use.
 
 ## Preserve the user's installation
 
-- Updates are opt-in. Explain Git-managed and ZIP options; never force Git, a fork, an account, or an update on a happy user.
-- Do not pull/update as part of normal startup. Before a requested update, follow [docs/updates.md](docs/updates.md), explain changes and preserve the old code and data together.
-- Never discard edits, overwrite `.env.local`, delete data, or reset a branch to fix a setup problem. Inspect the actual checkout and running process first.
-- Keep the server on `127.0.0.1`. This single-user app has no authentication or tenant isolation. Do not expose it through a public tunnel or deploy it as a shared service.
-- Never request a key in chat, print it, put it in a command argument, commit it, or prefix it with `VITE_`. Guide the user to a local editor. Verify presence without revealing values.
-- No purchases, cloud deployments, login services, or startup daemons are part of local setup. Explain optional changes before acting.
+Updates are opt-in. Follow [updates and backups](docs/updates.md) only when requested. Preserve customizations, `.env.local` and data; never force-reset a checkout. Keep the server bound to `127.0.0.1`: it is a single-user app without authentication. Never expose keys through logs, source, `VITE_` variables or browser storage. Do not install startup services without the user requesting them.
 
-## Explain and verify
+Finish with their actual folder path, version, local URL, start/stop steps, database location, update preference and checks passed/pending. Save this short handoff in ignored `INSTALLATION.local.md`, in their chosen language and without secrets.
 
-Use [docs/trader-guide.md](docs/trader-guide.md) for the complete main-control tour. Explain live versus replay, native versus NQ prices, local recording, and macOS-only alerts. UI text currently remains English.
+## Code changes
 
-Check install, build, server health, actual provider feeds, freshness, settings persistence, and (on Mac) desktop delivery separately. Health alone is not market-data proof. Never call mock data live. If closed-market conditions or missing access prevent live verification, state that clearly and leave a concrete retry step.
-
-Finish with the actual install path, selected language, version/commit or ZIP source, start/stop instructions, local URL, database/backup location, update preference, passed checks and remaining limitations. Save this handoff locally in `INSTALLATION.local.md` (ignored by Git); no secrets.
-
-## Working on code
-
-Explain simply; show small before/after snippets for bugs. Before using a third-party library, inspect its installed version and consult current official documentation (use a connected documentation tool if available). Preserve unrelated work. Use Bun and the committed lockfile; do not regenerate dependencies merely to install. Run `bun run typecheck`, `bun run test`, and `bun run build` for code changes. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Explain simply and show small before/after snippets for bugs. Inspect installed third-party versions and consult current official documentation before using their APIs. Preserve unrelated changes. Run `bun run typecheck`, `bun run test` and `bun run build` for code changes. See [CONTRIBUTING.md](CONTRIBUTING.md).

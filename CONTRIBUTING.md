@@ -6,7 +6,7 @@ Puedes abrir incidencias y propuestas en **español o inglés**. Explica qué pa
 
 ## Local development
 
-Read [AGENTS.md](AGENTS.md), [agent setup](docs/agent-setup.md) and [technical reference](docs/technical-reference.md). Use Bun from `.bun-version` and `bun install --frozen-lockfile`. `bun run dev` starts the Vite browser app on 5173 and the Bun API on 4321. Live development needs your own GexBot access; unit tests do not. Mock mode still fetches seed data.
+Read [AGENTS.md](AGENTS.md) and [configuration](docs/configuration.md). Use Bun from `.bun-version` and `bun install --frozen-lockfile`. `bun run dev` starts the Vite browser app on 5173 and the Bun API on 4321. Live development needs your own GexBot access; unit tests do not. Mock mode still fetches seed data.
 
 Before submitting code:
 

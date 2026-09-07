@@ -10,7 +10,7 @@ Funciona en tu ordenador. La clave API, los ajustes y el historial se guardan ah
 
 Abre la carpeta del proyecto con un agente que pueda trabajar en tu ordenador y pega esto:
 
-> Ayúdame a instalar GEX Cockpit. Antes de hacer nada, pregunta si prefiero español o inglés y espera mi respuesta. Lee AGENTS.md y sigue docs/agent-setup.md. Explica cada paso y todos los controles principales con palabras sencillas. Ayúdame a elegir entre una instalación con actualizaciones opcionales y una copia ZIP sin Git. Nunca actualices automáticamente. Mantén mi clave API privada y comprueba que la app recibe datos antes de dar la instalación por terminada.
+> Ayúdame a instalar GEX Cockpit. Antes de hacer nada, pregunta si prefiero español o inglés y espera mi respuesta. Sigue AGENTS.md. Explica cada paso y todos los controles principales con palabras sencillas. Ayúdame a elegir entre una instalación con actualizaciones opcionales y una copia ZIP sin Git. Nunca actualices automáticamente. Mantén mi clave API privada y comprueba que la app recibe datos antes de dar la instalación por terminada.
 
 No necesitas saber programar. El agente se encarga de los pasos técnicos y debe dejarte instrucciones claras para abrir y cerrar la app. **La interfaz sigue usando etiquetas en inglés**; el agente te las explicará en español.
 
@@ -63,9 +63,9 @@ Lee la [guía de uso en español](docs/trader-guide.md#español). En Mac, prueba
 
 ## Más información
 
-- [Instalación y resolución de problemas para agentes](docs/agent-setup.md): el agente debe traducir sus explicaciones al idioma elegido.
+- [Instalación y resolución de problemas para agentes](AGENTS.md): el agente debe traducir sus explicaciones al idioma elegido.
 - [Guía de controles en español](docs/trader-guide.md#español)
-- [Configuración técnica](docs/technical-reference.md)
+- [Configuración técnica](docs/configuration.md)
 - [Contribuciones](CONTRIBUTING.md) · [Seguridad](SECURITY.md)
 
 Licencia MIT: [LICENSE](LICENSE). Las bibliotecas mantienen sus propias licencias: [avisos de terceros](THIRD_PARTY_NOTICES.md).

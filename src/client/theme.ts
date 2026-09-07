@@ -1,6 +1,6 @@
 /**
  * Gexbot color scheme, sampled from the official settings panels
- * (see docs/gexbot-reference.md). Tweak here — nothing else hardcodes color.
+ * Shared chart colors and settings defaults.
  */
 export const GEXBOT = {
   bg: "#000000",

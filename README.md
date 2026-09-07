@@ -10,7 +10,7 @@ The app runs on your computer. Your API key, settings and recorded history stay 
 
 Open this repository folder in an agent that can work on your computer and paste:
 
-> Help me install GEX Cockpit. Before doing anything, ask whether I prefer English or Spanish and wait for my answer. Read AGENTS.md and follow docs/agent-setup.md. Explain each step and every main app control in simple terms. Help me choose an installation with optional updates or a ZIP copy without Git. Never update automatically. Keep my API key private and verify the app actually receives data before saying setup is complete.
+> Help me install GEX Cockpit. Before doing anything, ask whether I prefer English or Spanish and wait for my answer. Follow AGENTS.md. Explain each step and every main app control in simple terms. Help me choose an installation with optional updates or a ZIP copy without Git. Never update automatically. Keep my API key private and verify the app actually receives data before saying setup is complete.
 
 No coding knowledge is needed. The agent should do the technical work and leave you simple start/stop instructions. The setup conversation can be Spanish; **the app interface currently uses English labels**.
 
@@ -67,10 +67,9 @@ When you want changes, ask your agent to follow [updates and backups](docs/updat
 
 ## Help and development
 
-- [Setup, troubleshooting and agent verification](docs/agent-setup.md)
+- [Setup, troubleshooting and agent verification](AGENTS.md)
 - [What every main control does / Guía de uso](docs/trader-guide.md)
-- [Configuration, commands and architecture](docs/technical-reference.md)
+- [Configuration and developer commands](docs/configuration.md)
 - [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
-- [Release checklist](docs/releasing.md)
 
 MIT licensed; see [LICENSE](LICENSE). Third-party libraries retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). `private: true` in package.json prevents accidental npm publication; it does not restrict the source license.
