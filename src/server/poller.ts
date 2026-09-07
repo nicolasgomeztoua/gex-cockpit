@@ -1,3 +1,4 @@
+import { processLiveAlerts } from "./alerts";
 import {
   assertGexbotApiKey,
   fetchFeed,
@@ -70,6 +71,10 @@ export function subscribe(fn: Listener): () => void {
   return () => listeners.delete(fn);
 }
 
+export function liveSnapshots(): FeedSnapshot[] {
+  return [...liveStore.values()];
+}
+
 export function snapshots(): FeedSnapshot[] {
   return [...store.values()];
 }
@@ -134,6 +139,7 @@ async function pollLoop(ticker: Ticker, kind: FeedKind): Promise<void> {
           emit(snap);
         }
       }
+      if (!MOCK) processLiveAlerts(snap);
       const recoveredFailures = retry.recovered();
       if (recoveredFailures > 0) {
         console.info(

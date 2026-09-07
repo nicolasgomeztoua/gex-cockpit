@@ -6,3 +6,13 @@ dist/
 data/
 .DS_Store
 *.log
+
+# Local installation notes and backups
+INSTALLATION.local.md
+backups/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

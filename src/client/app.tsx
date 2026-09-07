@@ -102,14 +102,7 @@ function App() {
     return feeds;
   }, [s.feeds, ndxState, ndxGamma, ndxOi, qqqState, qqqGamma, qqqOi]);
 
-  // alerts run on the same displayed-unit data the charts show
-  useLevelAlerts(
-    [
-      { label: "NDX", ticker: "NDX", state: ndxState, gamma: ndxGamma, oi: ndxOi },
-      { label: "QQQ", ticker: "QQQ", state: qqqState, gamma: qqqGamma, oi: qqqOi },
-    ],
-    settings,
-  );
+  useLevelAlerts();
 
   return (
     <TooltipProvider>

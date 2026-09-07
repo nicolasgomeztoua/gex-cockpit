@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* shadcn-style tokens, tuned to the gexbot black theme (docs/gexbot-reference.md) */
+/* shadcn-style tokens, tuned to the gexbot black theme */
 :root {
   --background: #000000;
   --foreground: #fafafa;

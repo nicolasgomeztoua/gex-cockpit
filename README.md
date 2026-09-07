@@ -1,117 +1,75 @@
 # GEX Cockpit
 
-A private, local-only dashboard for [GexBot](https://www.gexbot.com) gamma-exposure data.
-Two TradingView-style charts (NDX and QQQ) show the intraday spot tape with the GEX profile
-anchored to the right edge, every major level as a color-coded line, and zero gamma as a
-continuous session line — mirroring gexbot.com's own chart UI (see `docs/gexbot-reference.md`).
+**[Español](README.es.md) · English**
 
-## Quick start
+A local dashboard for traders using [GexBot](https://www.gexbot.com) data. View NDX and QQQ prices, gamma-exposure profiles and key levels, replay your recorded sessions, and receive desktop level alerts on macOS. It does not connect to a broker or place orders.
 
-```sh
-bun install
-bun run build      # Vite frontend -> dist/
-bun start          # Hono/Bun API + built app at http://127.0.0.1:4321
-```
+The app runs on your computer. Your API key, settings and recorded history stay there. It contacts GexBot for market data; open-source code does not include a data subscription or permission to redistribute provider data. This is an independent project, not an official GexBot or TradingView product.
 
-Requires a `.env.local` in the repo root (never committed):
+## Let your AI agent install it
 
-```
-GEXBOT_API_KEY=...
-```
+Open this repository folder in an agent that can work on your computer and paste:
 
-Other commands:
+> Help me install GEX Cockpit. Before doing anything, ask whether I prefer English or Spanish and wait for my answer. Follow AGENTS.md. Explain each step and every main app control in simple terms. Help me choose an installation with optional updates or a ZIP copy without Git. Never update automatically. Keep my API key private and verify the app actually receives data before saying setup is complete.
 
-```sh
-bun run dev        # Vite HMR app on :5173 + Hono/Bun API on :4321
-MOCK=1 bun start   # synthetic session (weekends) — badged, nothing persisted
-bun run typecheck
-bun run test       # focused Vitest unit tests
-bun run build      # production frontend bundle
-bun run probe      # UI acceptance probe (server must already be running)
-bun run db:generate
-```
+No coding knowledge is needed. The agent should do the technical work and leave you simple start/stop instructions. The setup conversation can be Spanish; **the app interface currently uses English labels**.
 
-The live chart always opens with the current New York RTH history already
-loaded and pannable. The sidebar's GexBot-style **History** panel can load
-Today or an older 09:30–16:00 ET session at its latest recorded point, then
-seek, jump, rewind/forward, and play it at 1x–30x. **Clear history** restores
-the newest live state; polling and recording continue while history is loaded.
+## What you need
 
-`bun start` serves `dist/` and builds it automatically when `dist/index.html`
-is missing. In development, Vite proxies every `/api` request — including the
-SSE stream — to the Hono backend. The repo-root `.env.local` is server-only;
-never put the GexBot key in a `VITE_` variable.
+- A computer with [Bun](https://bun.com/docs/installation), the program that runs the app. This checkout is tested with Bun **1.3.12**; use that version for reproducibility.
+- Your own GexBot API key with access to the required feeds. Confirm access and any price with GexBot before purchasing.
+- Internet access for live data and dependency installation.
+- macOS for native desktop alerts. Windows/Linux chart setup is not yet verified end to end; native alerts will not work there. Leave Level Alerts off on those systems.
 
-## Configuration
+## Install manually
 
-| Env var | Default | Meaning |
-| --- | --- | --- |
-| `GEXBOT_API_KEY` | — (required) | GexBot API key, server-side only |
-| `POLL_MS` | `10000` | Poll interval; responses are deduped on the provider timestamp |
-| `GEX_STATE_AGGREGATION` | `zero` | State profile: `zero` = latest expiry, `one` = next expiry, `full` = 90d |
-| `GEX_OI_AGGREGATION` | `full` | Classic/Open Interest profile: `full` = 90d, `zero` = latest expiry, `one` = next expiry |
-| `GEX_AGGREGATION` | — | Legacy fallback that sets both profiles when a per-profile variable is absent |
-| `PORT` | `4321` | Listen port (always bound to `127.0.0.1`) |
-| `VITE_PORT` | `5173` | Vite dev-server port (`bun run dev` only) |
-| `DB_PATH` | `data/gex-cockpit.db` | SQLite database file |
-| `MOCK` | off | `1` = synthetic session seeded from one real snapshot |
-| `REPLAY` | off | Legacy/diagnostic startup replay for one `YYYY-MM-DD`; normal use starts replay from the sidebar |
+Choose **one** way to get the source:
 
-## Layout
-
-```
-src/
-  server/    Hono app on Bun: API polling, Drizzle/SQLite, SSE, static serving
-    index.ts   Bun.serve entry (127.0.0.1 + PORT)
-    app.ts     Hono composition + production dist/ SPA serving
-    routes.ts  typed API routes, zod validation, and SSE
-    poller.ts  poll loops, timestamp dedupe, backoff, mock mode
-    gexbot.ts  GexBot API client + response parsing
-    schema.ts  Drizzle schema matching the existing SQLite tables
-    db.ts      Drizzle over bun:sqlite (WAL, migrations, history queries)
-  client/    React 19 + lightweight-charts frontend (built by Vite)
-    GexChart.tsx      chart wrapper + GEX-profile canvas primitive + level lines
-    Sidebar.tsx       gexbot-style settings panel
-    theme.ts          exact gexbot colors + persisted layer settings
-    components/ui/    shadcn-style primitives (Radix)
-  shared/    types and official futures-price conversion shared by server and client
-docs/        gexbot visual reference, original project brief
-scripts/     ui-probe.ts — headless toggle/screenshot probe
-drizzle/     generated baseline migration (`IF NOT EXISTS` for old DB compatibility)
-vite.config.ts  React + Tailwind v4, build output, and dev API proxy
-```
-
-## HTTP surface
-
-| Route | Purpose |
+| Choice | What it means |
 | --- | --- |
-| `/` | The app |
-| `/api/stream` | SSE: full state on connect, deduped snapshots after |
-| `/api/levels` | Latest majors/zero-gamma/net per feed (integration hook, e.g. TradingView levels) |
-| `/api/settings` | GET/PUT the tolerant client-settings JSON object |
-| `/api/replay` | GET recorded sessions/status; POST start/stop/play/pause/seek/speed controls |
-| `/api/health` | Liveness |
+| Agent-managed Git copy | Recommended for easy future updates. Your agent can get changes when you ask. You do not need to learn Git, fork the project, or create a GitHub account to clone a public repo. |
+| ZIP download | No Git required. Use a published release's source ZIP, or GitHub's **Code → Download ZIP**, and extract it to a permanent folder. You can keep it unchanged. |
 
-## Data notes
+For the Git option:
 
-- Feeds: `{NDX,QQQ}` State GEX Profile, Options Gamma, and Classic/Open Interest
-  GEX. By default, State and Options Gamma use GexBot's **latest** expiry while
-  Open Interest uses its **90d** aggregate.
-- The "nq future" toggle uses GexBot's documented conversion endpoint for both
-  `NDX → NQ` (additive) and `QQQ → NQ` (affine):
-  `future = multiplier × source + additive`. Parameters refresh every 15 minutes.
-- State GEX Profile call/put imbalance and Options Profile long/short gamma are
-  separate feeds and separate chart layers; they are not relabeled as each other.
-- Normal GexBot requests are serialized on one warmed connection and retain the
-  1-second timeout. Cold start and an automatic connection rebuild may use up to
-  3 seconds because establishing provider TLS is measurably slower than one second;
-  after rebuilding, the interrupted request is retried at the normal 1-second limit.
-- Spot is GexBot context data, not exchange OHLC — candles are 1-minute buckets of polled ticks.
-- Live spot and zero-gamma histories show one New York RTH session
-  (09:30–16:00 ET): today when available after the open, otherwise the latest
-  recorded RTH session. Premarket and overnight rows are excluded. Histories
-  preserve provider timestamps. Gaps longer than
-  30 seconds render as proportional whitespace instead of a false connecting line.
-- History lands in `data/gex-cockpit.db` (SQLite, gitignored). Mock mode never writes.
-- Strike-row index semantics (index 1 = volume/state value, index 2 = OI value) were
-  verified against live responses; see `docs/original-brief.md` for the details.
+```sh
+git clone https://github.com/nicolasgomeztoua/gex-cockpit.git
+cd gex-cockpit
+```
+
+For ZIP, open a terminal in the extracted folder containing `package.json`. For either option:
+
+1. Install Bun using its [official instructions](https://bun.com/docs/installation), then check `bun --version`.
+2. Copy `.env.example` to `.env.local` in this folder. Replace the empty `GEXBOT_API_KEY=` value with your key using a local text editor. Do not paste your key into agent chat, screenshots, issues, or terminal commands. Keep this file private.
+3. Run these commands, one at a time:
+
+```sh
+bun install --frozen-lockfile
+bun run build
+bun start
+```
+
+`install` downloads the exact dependencies in `bun.lock`. `build` prepares the browser interface. `start` runs the local server and begins collecting data. The database is created automatically; you do not need to install a database server or run migrations manually.
+
+Open **http://127.0.0.1:4321** in your browser. Keep the terminal open and computer awake. Check both charts have provider data; “stream connected” only confirms a connection to the local app, not fresh market data. A new installation has no previously recorded sessions. Outside market hours, history may be empty.
+
+## Daily use
+
+From the same app folder, run `bun start` and open the address above. Stop with **Ctrl+C** in that terminal. Closing the browser does not stop the backend. A computer shutdown or sleep stops live monitoring; startup is not automatic.
+
+Read the [plain-language app guide](docs/trader-guide.md) for chart layers, futures conversion, replay, settings and alerts. On Mac, use **Test desktop alert** and verify you see/hear it. Polls normally arrive every 10 seconds; a brief touch between samples can be missed. Treat the app as market context, not an execution feed or trading recommendation.
+
+## Updates are your choice
+
+There is no automatic updater. If you like your version, keep using it: no pull, commit, push, or regular Git maintenance is required. Future provider/API or operating-system changes may eventually require an update.
+
+When you want changes, ask your agent to follow [updates and backups](docs/updates.md). It should explain the changes first, preserve your key/settings/history, and keep a rollback copy. ZIP users can also update later by downloading into a new folder.
+
+## Help and development
+
+- [Setup, troubleshooting and agent verification](AGENTS.md)
+- [What every main control does / Guía de uso](docs/trader-guide.md)
+- [Configuration and developer commands](docs/configuration.md)
+- [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+
+MIT licensed; see [LICENSE](LICENSE). Third-party libraries retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). `private: true` in package.json prevents accidental npm publication; it does not restrict the source license.

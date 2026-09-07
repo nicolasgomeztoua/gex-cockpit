@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Bell,
@@ -14,7 +14,6 @@ import {
   Settings,
   SkipBack,
   SkipForward,
-  Trash2,
   Type,
 } from "lucide-react";
 import {
@@ -33,7 +32,7 @@ import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Input } from "./components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { rpc } from "./api";
-import { ensureAudio, playSound } from "./alerts/sounds";
+import { AlertStatus } from "./alerts/AlertStatus";
 import { SIDEBAR_MAX_W, SIDEBAR_MIN_W, useUiStore } from "./stores/uiStore";
 import {
   GEXBOT,
@@ -63,11 +62,6 @@ const fmtTimeET = (sec: number) =>
     second: "2-digit",
     hour12: true,
   });
-
-// Notification.permission changes outside React; re-read it per render pass
-const notifPermission = () =>
-  typeof Notification === "undefined" ? "unsupported" : Notification.permission;
-const subscribeNoop = () => () => {};
 
 function Section(props: { title: string; color: string; children: ReactNode }) {
   return (
@@ -235,6 +229,7 @@ function HistoryPanel({
   const activating = useRef(false);
   const seekInFlight = useRef(false);
   const queuedSeek = useRef<number | null>(null);
+  const lastReplayPosition = useRef<{ date: string; clock: number } | null>(null);
   const today = etDate(Math.floor(Date.now() / 1_000));
   const loadedStart = liveHistory[0]?.[0] ?? null;
   const loadedEnd = liveHistory.at(-1)?.[0] ?? null;
@@ -273,6 +268,10 @@ function HistoryPanel({
   useEffect(() => {
     if (replay?.date) setSelected(replay.date);
   }, [replay?.date]);
+
+  useEffect(() => {
+    if (replay) lastReplayPosition.current = { date: replay.date, clock: replay.clock };
+  }, [replay?.date, replay?.clock]);
 
   const selectedSession = sessions.find(session => session.date === selected);
   const selectedEnd = selectedSession?.endTs ?? 0;
@@ -415,19 +414,28 @@ function HistoryPanel({
     else void activateAndSeek(bounded);
   };
 
-  const clearHistory = async () => {
+  const returnToLive = async () => {
     if (!replay?.returnToLive || busy) return;
     setBusy(true);
     setError("");
     try {
       const response = await postReplay("stop");
       const payload = await response.json();
-      if (!response.ok) setError("error" in payload ? payload.error : "Could not clear history");
+      if (!response.ok) setError("error" in payload ? payload.error : "Could not return to live mode");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
     }
+  };
+
+  const switchMode = async () => {
+    if (replay) {
+      await returnToLive();
+      return;
+    }
+    const last = lastReplayPosition.current;
+    await loadHistory(last?.date === selected ? last.clock : undefined);
   };
 
   const clockLabel = sliderClock > 0 ? new Date(sliderClock * 1000).toLocaleTimeString("en-US", {
@@ -477,17 +485,39 @@ function HistoryPanel({
             <button
               data-probe="replay-stop"
               disabled={!replay?.returnToLive || busy}
-              onClick={() => void clearHistory()}
+              onClick={() => void returnToLive()}
               className="col-span-2 flex cursor-pointer items-center justify-center gap-2 rounded bg-[#9ec5f8] px-2 py-2 text-[13px] font-medium text-black transition-colors hover:bg-[#b4d3fa] disabled:cursor-not-allowed disabled:opacity-35"
             >
-              <Trash2 className="size-4" />
-              clear history
+              <ArrowLeft className="size-4" />
+              return to live
             </button>
           </div>
         )}
 
         <div className="mt-3 flex items-center gap-3 tabular-nums">
-          <Radio className={cn("size-4", replay ? "text-amber-400" : "text-emerald-400")} />
+          <button
+            type="button"
+            data-probe="replay-mode-toggle"
+            disabled={busy || (replay ? !replay.returnToLive : !selected)}
+            onClick={() => void switchMode()}
+            aria-pressed={!!replay}
+            aria-label={replay ? "Return to live mode" : "Switch to replay mode"}
+            title={
+              replay
+                ? replay.returnToLive
+                  ? "Return to live"
+                  : "Startup replay cannot return to live"
+                : "Switch to replay"
+            }
+            className={cn(
+              "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-35",
+              replay
+                ? "bg-amber-400/15 text-amber-400 hover:bg-amber-400/25"
+                : "bg-emerald-400/15 text-emerald-400 hover:bg-emerald-400/25",
+            )}
+          >
+            <Radio className="size-4" />
+          </button>
           <select
             data-probe="replay-speed"
             disabled={!replay}
@@ -643,7 +673,6 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
   const setLevel = (key: LevelKey, patch: Partial<LevelConfig>) =>
     setTicker({ levels: { ...ts.levels, [key]: { ...ts.levels[key], ...patch } } });
 
-  const permission = useSyncExternalStore(subscribeNoop, notifPermission, notifPermission);
   const S = GEXBOT.state;
   const C = GEXBOT.classic;
   const stateKeys = LEVEL_KEYS.filter(k => LEVEL_META[k].section === "state");
@@ -866,54 +895,15 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
               label="Level Alerts"
               on={settings.alerts.enabled}
               onChange={v => {
-                if (v) {
-                  ensureAudio();
-                  if (typeof Notification !== "undefined" && Notification.permission === "default") {
-                    void Notification.requestPermission();
-                  }
-                }
                 setAlerts({ enabled: v });
               }}
             />
+            <AlertStatus />
             {settings.alerts.enabled && (
               <>
-                <Field label="trigger">
-                  <Tabs
-                    className="flex-1"
-                    value={settings.alerts.mode}
-                    onValueChange={v => setAlerts({ mode: v as LayerSettings["alerts"]["mode"] })}
-                  >
-                    <TabsList className="w-full">
-                      <TabsTrigger value="approach">near</TabsTrigger>
-                      <TabsTrigger value="cross">cross</TabsTrigger>
-                      <TabsTrigger value="both">both</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-                </Field>
-                {settings.alerts.mode !== "cross" && (
-                  <Field label="distance">
-                    <Input
-                      type="number"
-                      min={0}
-                      step={settings.alerts.distanceUnit === "percent" ? 0.01 : 1}
-                      value={settings.alerts.distance}
-                      onChange={e => setAlerts({ distance: Math.max(0, Number(e.target.value) || 0) })}
-                      className="w-16"
-                    />
-                    <Tabs
-                      className="flex-1"
-                      value={settings.alerts.distanceUnit}
-                      onValueChange={v =>
-                        setAlerts({ distanceUnit: v as LayerSettings["alerts"]["distanceUnit"] })
-                      }
-                    >
-                      <TabsList className="w-full">
-                        <TabsTrigger value="points">pts</TabsTrigger>
-                        <TabsTrigger value="percent">%</TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-                  </Field>
-                )}
+                <div className="px-1.5 py-1 text-[12px] text-muted-foreground">
+                  Alert when price touches a selected level. Passing through it between price updates counts too.
+                </div>
                 <Field label="cooldown">
                   <Input
                     type="number"
@@ -935,13 +925,12 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
                   >
                     <TabsList className="w-full">
                       <TabsTrigger value="once">once</TabsTrigger>
-                      <TabsTrigger value="repeat3">3×</TabsTrigger>
-                      <TabsTrigger value="untilFocus">focus</TabsTrigger>
+                      <TabsTrigger value="untilFocus">until refocus</TabsTrigger>
                     </TabsList>
                   </Tabs>
                 </Field>
                 <div className="px-1.5 py-0.5 text-[11px] text-muted-foreground/50">
-                  3× repeats like TradingView; focus renotifies until this window is refocused
+                  Until refocus repeats every 25 seconds, with no time limit.
                 </div>
                 <Field label="sound">
                   <Tabs
@@ -956,26 +945,10 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
                       <TabsTrigger value="blip">blip</TabsTrigger>
                     </TabsList>
                   </Tabs>
-                  {settings.alerts.sound !== "off" && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() => {
-                            ensureAudio();
-                            playSound(settings.alerts.sound);
-                          }}
-                          className="flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground hover:text-foreground"
-                        >
-                          <Play className="size-3.5" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>Preview sound</TooltipContent>
-                    </Tooltip>
-                  )}
                 </Field>
                 <div className="px-1.5 py-0.5 text-[11px] text-muted-foreground/70">
-                  notifications: {permission}
-                  {permission === "denied" && " — enable in browser settings"}
+                  Alerts run on this Mac even with the browser closed. Keep the Mac awake and the backend running.
+                  Allow Script Editor notifications in macOS settings.
                 </div>
                 <div className="px-1.5 py-0.5 text-[11px] text-muted-foreground/50">
                   pick levels per ticker with the <Bell className="inline size-3" /> icon in settings
@@ -994,6 +967,15 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
           />
           {connected ? "stream connected" : "stream disconnected"}
         </div>
+        <a
+          href="https://www.tradingview.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[10px] text-muted-foreground hover:underline"
+        >
+          TradingView Lightweight Charts™<br />
+          Copyright (с) 2025 TradingView, Inc.
+        </a>
       </SidebarFooter>
     </SidebarRoot>
   );

@@ -5,7 +5,7 @@
  *   bun scripts/ui-probe.ts "Major Short Gamma"          # main line switch
  *   bun scripts/ui-probe.ts "Major Short Gamma" label    # chart-label mini-toggle
  *   bun scripts/ui-probe.ts "Zero Gamma" alert           # alert mini-toggle
- *   bun scripts/ui-probe.ts --alert-smoke                # enable alerts, wait for __lastAlert
+ *   bun scripts/ui-probe.ts --alert-smoke                # test backend desktop notification delivery
  */
 import puppeteer from "puppeteer-core";
 
@@ -55,24 +55,13 @@ try {
   await new Promise(r => setTimeout(r, 400));
 
   if (arg === "--alert-smoke") {
-    // enable alerts with a huge approach distance so the next tick fires
-    await page.evaluate(async () => {
-      const j = await fetch("/api/settings").then(r => r.json());
-      const s = j.settings ?? {};
-      s.alerts = { enabled: true, mode: "both", distance: 10000, distanceUnit: "points", cooldownSec: 300, sound: "off", notify: "once" };
-      const levels = Object.fromEntries(
-        ["mlg", "msg", "zg", "mpv", "mnv", "mpo", "mno"].map(l => [l, { line: true, label: false, alert: true }]),
-      );
-      s.tickers = { NDX: { ...(s.tickers?.NDX ?? {}), levels }, QQQ: { ...(s.tickers?.QQQ ?? {}), levels } };
-      await fetch("/api/settings", { method: "PUT", body: JSON.stringify(s) });
-      localStorage.removeItem("gex-cockpit-settings-v4");
+    // Exercise the real backend delivery path without changing saved levels or settings.
+    const result = await page.evaluate(async () => {
+      const response = await fetch("/api/alerts/test", {
+        method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+      });
+      return { ok: response.ok, status: response.status, result: await response.json() };
     });
-    await page.reload({ waitUntil: "networkidle2", timeout: 20_000 }).catch(() => {});
-    await new Promise(r => setTimeout(r, 12_000)); // needs two ticks (first is suppressed)
-    const result = await page.evaluate(() => ({
-      lastAlert: (window as any).__lastAlert ?? null,
-      permission: Notification.permission,
-    }));
     await page.screenshot({ path: "/tmp/probe_after.png" });
     console.log(JSON.stringify(result, null, 2));
   } else {
