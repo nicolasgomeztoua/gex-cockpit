@@ -255,6 +255,7 @@ async fn validate_key(key: &str) -> Result<(), String> {
         return Err("KEY_REJECTED".into());
     }
     let http = reqwest::Client::builder()
+        .user_agent("gex-cockpit/0.3.0 (desktop)")
         .timeout(Duration::from_secs(12))
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -322,6 +323,7 @@ async fn check_update(
     let mut pending = state.update.lock().await;
     *pending = None;
     let http = reqwest::Client::builder()
+        .user_agent("gex-cockpit/0.3.0 (desktop)")
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|_| "UPDATE_FAILED")?;
