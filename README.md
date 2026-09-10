@@ -25,9 +25,17 @@ Both screenshots show a recorded session from September 1, 2026.
 
 ## Download the desktop preview
 
-**[Download for Windows or Mac](https://github.com/nicolasgomeztoua/gex-cockpit/releases/tag/v0.3.0-beta.1)** — install it, choose English or Español, and enter your GexBot API key. No Bun, terminal or coding setup required.
+Choose your computer to download **v0.3.0-beta.1**:
 
-Use the **DMG** for your Mac (Apple Silicon or Intel), or **x64-setup.exe** for Windows 10/11. These preview installers are unsigned by Apple/Microsoft, so the first launch may show a security warning. See the short [desktop installation and updates guide](docs/desktop.md). Keep the app open for recording and alerts; closing its window quits it. Updates are optional and preserve your data.
+| Computer | Download |
+| --- | --- |
+| Windows 10/11 (64-bit) | **[Windows installer (.exe)](https://github.com/nicolasgomeztoua/gex-cockpit/releases/download/v0.3.0-beta.1/GEX.Cockpit_0.3.0-beta.1_x64-setup.exe)** |
+| Mac with Apple Silicon (macOS 13+) | **[Mac Apple Silicon (.dmg)](https://github.com/nicolasgomeztoua/gex-cockpit/releases/download/v0.3.0-beta.1/GEX.Cockpit_0.3.0-beta.1_aarch64.dmg)** |
+| Mac with Intel (macOS 13+) | **[Mac Intel (.dmg)](https://github.com/nicolasgomeztoua/gex-cockpit/releases/download/v0.3.0-beta.1/GEX.Cockpit_0.3.0-beta.1_x64.dmg)** |
+
+On Mac, **Apple menu → About This Mac** shows your chip or processor. Install the app, choose English or Español, and enter your own GexBot API key. No Bun, terminal or coding setup required. See [release details](https://github.com/nicolasgomeztoua/gex-cockpit/releases/tag/v0.3.0-beta.1).
+
+These preview installers are unsigned by Apple/Microsoft, so the first launch may show a security warning. See the short [desktop installation and updates guide](docs/desktop.md). Keep the app open for recording and alerts; closing its window quits it. Updates are optional and preserve your data.
 
 ## Install from source with your AI agent
 
