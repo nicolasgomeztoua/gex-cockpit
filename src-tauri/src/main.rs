@@ -452,6 +452,8 @@ mod tests {
                     );
                     std::thread::sleep(Duration::from_millis(5));
                 };
+                // Windows inherits the listener's nonblocking mode on accepted sockets.
+                connection.set_nonblocking(false).unwrap();
                 connection
                     .set_read_timeout(Some(Duration::from_secs(3)))
                     .unwrap();

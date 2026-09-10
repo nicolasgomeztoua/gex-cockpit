@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
+import { writeDesktopNotices } from "./desktop-notices";
 
 const targets: Record<string, string> = {
   "aarch64-apple-darwin": "bun-darwin-arm64",
@@ -12,6 +13,7 @@ if (host.exitCode !== 0) throw new Error("Install the Rust toolchain first");
 const target = process.env.TAURI_ENV_TARGET_TRIPLE || host.stdout.toString().trim();
 if (!targets[target]) throw new Error(`Unsupported desktop target: ${target}`);
 mkdirSync("src-tauri/binaries", { recursive: true });
+writeDesktopNotices(target);
 const output = `src-tauri/binaries/gex-backend-${target}${target.includes("windows") ? ".exe" : ""}`;
 const extra: string[] = [];
 if (process.platform === "win32") {

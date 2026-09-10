@@ -34,7 +34,9 @@
       "binaries/gex-backend"
     ],
     "resources": {
-      "../drizzle/": "drizzle/"
+      "../drizzle/": "drizzle/",
+      "../LICENSE": "LICENSE",
+      "binaries/THIRD_PARTY_LICENSES.txt": "THIRD_PARTY_LICENSES.txt"
     },
     "icon": [
       "icons/32x32.png",
