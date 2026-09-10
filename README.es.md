@@ -2,9 +2,26 @@
 
 **Español · [English](README.md)**
 
-Un panel local para traders que usan datos de [GexBot](https://www.gexbot.com). Muestra precios de NDX y QQQ, perfiles de exposición gamma y niveles importantes. Permite reproducir las sesiones que hayas grabado y recibir alertas de escritorio en macOS. No se conecta a un bróker ni envía órdenes.
+Un panel local para ver **State y Classic de [GexBot](https://www.gexbot.com) al mismo tiempo** en los gráficos de NDX y QQQ. Compara perfiles de exposición gamma y niveles importantes, reproduce las sesiones que hayas grabado y recibe alertas de escritorio en macOS. No se conecta a un bróker ni envía órdenes.
 
 Funciona en tu ordenador. La clave API, los ajustes y el historial se guardan ahí. La app consulta GexBot para obtener datos. El código abierto no incluye una suscripción de datos ni derechos para redistribuirlos. Es un proyecto independiente, no una aplicación oficial de GexBot o TradingView.
+
+## Así se ve
+
+**State + Classic en una sola pantalla**, con controles independientes para cada capa.
+
+![Gráficos de NDX y QQQ con perfiles y niveles de State y Classic juntos, junto a los controles de cada capa](docs/screenshots/state-classic.png)
+
+<details>
+<summary>Ver los controles para reproducir sesiones</summary>
+
+Revisa una sesión grabada, recorre su línea de tiempo y ajusta la velocidad de reproducción.
+
+![Gráficos de NDX y QQQ con la fecha de la sesión grabada, la línea de tiempo y los controles de reproducción en el panel lateral](docs/screenshots/session-replay.png)
+
+</details>
+
+Ambas capturas muestran una sesión grabada del 1 de septiembre de 2026.
 
 ## Que tu agente de IA lo instale
 
