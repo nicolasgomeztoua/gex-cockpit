@@ -2,9 +2,26 @@
 
 **[Español](README.es.md) · English**
 
-A local dashboard for traders using [GexBot](https://www.gexbot.com) data. View NDX and QQQ prices, gamma-exposure profiles and key levels, replay your recorded sessions, and receive desktop level alerts on macOS. It does not connect to a broker or place orders.
+A local dashboard for viewing **State and Classic from [GexBot](https://www.gexbot.com) together** on the same NDX and QQQ charts. Compare gamma-exposure profiles and key levels, replay your recorded sessions, and receive desktop level alerts on macOS. It does not connect to a broker or place orders.
 
 The app runs on your computer. Your API key, settings and recorded history stay there. It contacts GexBot for market data; open-source code does not include a data subscription or permission to redistribute provider data. This is an independent project, not an official GexBot or TradingView product.
+
+## See it in action
+
+**State + Classic in one view**, with separate controls for each layer.
+
+![NDX and QQQ charts with State and Classic profiles and levels displayed together, alongside their layer controls](docs/screenshots/state-classic.png)
+
+<details>
+<summary>See the session replay controls</summary>
+
+Revisit a recorded session, move through its timeline, and control playback speed.
+
+![NDX and QQQ charts with the recorded-session date, timeline, and replay controls visible in the sidebar](docs/screenshots/session-replay.png)
+
+</details>
+
+Both screenshots show a recorded session from September 1, 2026.
 
 ## Let your AI agent install it
 
