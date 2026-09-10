@@ -25,9 +25,17 @@ Ambas capturas muestran una sesión grabada del 1 de septiembre de 2026.
 
 ## Descarga la app de escritorio
 
-**[Descargar para Windows o Mac](https://github.com/nicolasgomeztoua/gex-cockpit/releases/tag/v0.3.0-beta.1)** — instálala, elige Español e introduce tu clave API de GexBot. No necesitas Bun, una terminal ni saber programar.
+Elige tu ordenador para descargar la versión de prueba **v0.3.0-beta.1**:
 
-Elige el **DMG** de tu Mac (Apple Silicon o Intel), o **x64-setup.exe** para Windows 10/11. Es una versión de prueba sin certificado de Apple/Microsoft; puede aparecer un aviso de seguridad al abrirla por primera vez. Aquí tienes la [guía breve de instalación y actualizaciones](docs/desktop.md#español). Mantén la app abierta para grabar sesiones y recibir alertas. Las actualizaciones son opcionales y conservan tus datos.
+| Ordenador | Descarga |
+| --- | --- |
+| Windows 10/11 (64 bits) | **[Instalador de Windows (.exe)](https://github.com/nicolasgomeztoua/gex-cockpit/releases/download/v0.3.0-beta.1/GEX.Cockpit_0.3.0-beta.1_x64-setup.exe)** |
+| Mac con Apple Silicon (macOS 13+) | **[Mac Apple Silicon (.dmg)](https://github.com/nicolasgomeztoua/gex-cockpit/releases/download/v0.3.0-beta.1/GEX.Cockpit_0.3.0-beta.1_aarch64.dmg)** |
+| Mac con Intel (macOS 13+) | **[Mac Intel (.dmg)](https://github.com/nicolasgomeztoua/gex-cockpit/releases/download/v0.3.0-beta.1/GEX.Cockpit_0.3.0-beta.1_x64.dmg)** |
+
+En Mac, **menú Apple → Acerca de este Mac** muestra tu chip o procesador. Instala la app, elige Español e introduce tu propia clave API de GexBot. No necesitas Bun, una terminal ni saber programar. Aquí tienes los [detalles de esta versión](https://github.com/nicolasgomeztoua/gex-cockpit/releases/tag/v0.3.0-beta.1).
+
+Es una versión de prueba sin certificado de Apple/Microsoft; puede aparecer un aviso de seguridad al abrirla por primera vez. Aquí tienes la [guía breve de instalación y actualizaciones](docs/desktop.md#español). Mantén la app abierta para grabar sesiones y recibir alertas. Las actualizaciones son opcionales y conservan tus datos.
 
 ## Instalar el código con ayuda de una IA
 
