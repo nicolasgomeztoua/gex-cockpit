@@ -73,7 +73,12 @@ export function DesktopGate({ children }: { children: ReactNode }) {
   const installUpdate = async () => {
     setBusy(true); setUpdate({ status: t.downloading });
     try { await invoke("install_update"); }
-    catch { setUpdate({ status: t.errors.UPDATE_FAILED }); setBusy(false); }
+    catch {
+      // An installer failure may restart the backend with a new private session.
+      try { setContext(await connectDesktop()); }
+      catch { setError("BACKEND_FAILED"); }
+      setUpdate({ status: t.errors.UPDATE_FAILED }); setBusy(false);
+    }
   };
   return <div className="flex h-screen w-full items-center justify-center overflow-y-auto bg-[#080a0d] p-6 text-white">
     <div className="my-auto w-full max-w-lg space-y-7 py-8">

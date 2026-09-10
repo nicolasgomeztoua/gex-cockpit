@@ -149,7 +149,7 @@ async function pollLoop(ticker: Ticker, kind: FeedKind): Promise<void> {
       }
       delay = POLL_MS;
     } catch (err) {
-      reportDesktopProviderError(err);
+      if (kind !== "gamma") reportDesktopProviderError(err);
       const msg = err instanceof Error ? err.message : String(err);
       const decision = retry.failed();
       delay = decision.delayMs;
