@@ -1,3 +1,4 @@
+import { isDesktop } from "./desktop/connection";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
@@ -947,8 +948,9 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
                   </Tabs>
                 </Field>
                 <div className="px-1.5 py-0.5 text-[11px] text-muted-foreground/70">
-                  Alerts run on this Mac even with the browser closed. Keep the Mac awake and the backend running.
-                  Allow Script Editor notifications in macOS settings.
+                  {isDesktop
+                    ? "Keep this app open and your computer awake for alerts. Allow GEX Cockpit notifications in system settings. Closing the window stops recording and alerts."
+                    : "Alerts run on this Mac even with the browser closed. Keep the Mac awake and the backend running. Allow Script Editor notifications in macOS settings."}
                 </div>
                 <div className="px-1.5 py-0.5 text-[11px] text-muted-foreground/50">
                   pick levels per ticker with the <Bell className="inline size-3" /> icon in settings
@@ -960,6 +962,7 @@ export function Sidebar({ settings, onChange, feeds, connected, mock, replay, li
       </SidebarContent>
 
       <SidebarFooter>
+        {isDesktop && <button className="text-left text-[11px] text-muted-foreground hover:underline" onClick={() => window.dispatchEvent(new Event("desktop-settings"))}>Connection / Conexión</button>}
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
           <span
             className="inline-block size-1.5 rounded-full"

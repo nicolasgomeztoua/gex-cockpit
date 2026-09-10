@@ -2,7 +2,7 @@
 
 **Español · [English](README.md)**
 
-Un panel local para ver **State y Classic de [GexBot](https://www.gexbot.com) al mismo tiempo** en los gráficos de NDX y QQQ. Compara perfiles de exposición gamma y niveles importantes, reproduce las sesiones que hayas grabado y recibe alertas de escritorio en macOS. No se conecta a un bróker ni envía órdenes.
+Un panel local para ver **State y Classic de [GexBot](https://www.gexbot.com) al mismo tiempo** en los gráficos de NDX y QQQ. Compara perfiles de exposición gamma y niveles importantes, reproduce las sesiones que hayas grabado y recibe alertas de escritorio en Windows y Mac. No se conecta a un bróker ni envía órdenes.
 
 Funciona en tu ordenador. La clave API, los ajustes y el historial se guardan ahí. La app consulta GexBot para obtener datos. El código abierto no incluye una suscripción de datos ni derechos para redistribuirlos. Es un proyecto independiente, no una aplicación oficial de GexBot o TradingView.
 
@@ -23,7 +23,13 @@ Revisa una sesión grabada, recorre su línea de tiempo y ajusta la velocidad de
 
 Ambas capturas muestran una sesión grabada del 1 de septiembre de 2026.
 
-## Que tu agente de IA lo instale
+## Descarga la app de escritorio
+
+**[Descargar para Windows o Mac](https://github.com/nicolasgomeztoua/gex-cockpit/releases/tag/v0.3.0-beta.1)** — instálala, elige Español e introduce tu clave API de GexBot. No necesitas Bun, una terminal ni saber programar.
+
+Elige el **DMG** de tu Mac (Apple Silicon o Intel), o **x64-setup.exe** para Windows 10/11. Es una versión de prueba sin certificado de Apple/Microsoft; puede aparecer un aviso de seguridad al abrirla por primera vez. Aquí tienes la [guía breve de instalación y actualizaciones](docs/desktop.md#español). Mantén la app abierta para grabar sesiones y recibir alertas. Las actualizaciones son opcionales y conservan tus datos.
+
+## Instalar el código con ayuda de una IA
 
 Abre la carpeta del proyecto con un agente que pueda trabajar en tu ordenador y pega esto:
 
@@ -31,14 +37,14 @@ Abre la carpeta del proyecto con un agente que pueda trabajar en tu ordenador y 
 
 No necesitas saber programar. El agente se encarga de los pasos técnicos y debe dejarte instrucciones claras para abrir y cerrar la app. **La interfaz sigue usando etiquetas en inglés**; el agente te las explicará en español.
 
-## Qué necesitas
+## Qué necesitas para instalar desde el código
 
-- [Bun](https://bun.com/docs/installation): el programa que ejecuta la app. Esta versión se prueba con **Bun 1.3.12**.
+- [Bun](https://bun.com/docs/installation): el programa que ejecuta la app. Esta versión se prueba con **Bun 1.3.14**.
 - Tu propia clave API de GexBot con acceso a los datos necesarios. Confirma con GexBot el acceso y su precio antes de comprar.
 - Internet para instalar dependencias y recibir datos.
 - Un Mac para las alertas de escritorio. La instalación completa en Windows/Linux aún no está verificada; las alertas nativas no funcionan ahí. Deja **Level Alerts** desactivado en esos sistemas.
 
-## Instalación manual
+## Instalar el código manualmente
 
 Elige una opción:
 

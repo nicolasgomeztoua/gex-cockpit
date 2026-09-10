@@ -1,0 +1,77 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "GEX Cockpit",
+  "version": "0.3.0-beta.1",
+  "identifier": "com.nicolasgomeztoua.gex-cockpit",
+  "build": {
+    "beforeDevCommand": "bun x vite",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "bun run build && bun run desktop:prepare",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "GEX Cockpit",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 640,
+        "backgroundColor": "#080a0d"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:*; object-src 'none'; base-uri 'self'; frame-src 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Finance",
+    "shortDescription": "View GexBot State and Classic together",
+    "externalBin": [
+      "binaries/gex-backend"
+    ],
+    "resources": {
+      "../drizzle/": "drizzle/"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-",
+      "entitlements": "Entitlements.plist"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English",
+          "Spanish"
+        ],
+        "displayLanguageSelector": true
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIzOTVCRkM1NENBM0FFNEUKUldST3JxTk14YitWczFUYWt5RmpONmlmaElLZDhOSVdvU3lGWDVnc3BYWStUc1FtQU0vZFhMYXIK",
+      "endpoints": [
+        "https://github.com/nicolasgomeztoua/gex-cockpit/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

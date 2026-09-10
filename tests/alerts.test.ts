@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -94,7 +95,7 @@ describe("durable touch alerts", () => {
       const db = new Database(process.argv[1]);
       evaluateAlerts(new AlertStore(db), JSON.parse(process.argv[2]), JSON.parse(process.argv[3]), ${now + 1000});
       db.close();
-    `, path, JSON.stringify(sample(101, now + 1000)), JSON.stringify(settings)], { cwd: new URL("..", import.meta.url).pathname });
+    `, path, JSON.stringify(sample(101, now + 1000)), JSON.stringify(settings)], { cwd: fileURLToPath(new URL("..", import.meta.url)) });
     expect(detection.exitCode).toBe(0);
     const delivery = Bun.spawnSync([process.execPath, "-e", `
       import { Database } from "bun:sqlite";
@@ -103,7 +104,7 @@ describe("durable touch alerts", () => {
       const db = new Database(process.argv[1]);
       await deliverDueAlerts(new AlertStore(db), async () => {}, () => ${now + 1000});
       db.close();
-    `, path], { cwd: new URL("..", import.meta.url).pathname });
+    `, path], { cwd: fileURLToPath(new URL("..", import.meta.url)) });
     expect(delivery.exitCode).toBe(0);
     expect(store.recent()[0]).toMatchObject({ deliveries: 1, acknowledged: 1 });
   });

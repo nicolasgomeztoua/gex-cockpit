@@ -25,7 +25,7 @@ export const db = drizzle(sqlite, { schema: { appSettings, snapshots, spotTicks 
 // Resolved off this module, not the cwd, so probes and one-off scripts can boot
 // the server from anywhere. The baseline migration is IF NOT EXISTS, so a
 // pre-migrations database picks up only the bookkeeping table and keeps its rows.
-migrate(db, { migrationsFolder: join(import.meta.dir, "../../drizzle") });
+migrate(db, { migrationsFolder: process.env.GEX_RESOURCE_DIR ? join(process.env.GEX_RESOURCE_DIR, "drizzle") : join(import.meta.dir, "../../drizzle") });
 
 /**
  * Zero gamma lives inside `majors` in current snapshots. Early local database

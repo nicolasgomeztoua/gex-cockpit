@@ -1,3 +1,4 @@
+import { DESKTOP, desktopMessage, startDesktopBridge } from "./desktop";
 import { startAlertDelivery } from "./alerts";
 import { app } from "./app";
 import { REPLAY_DATE, startPoller } from "./poller";
@@ -30,6 +31,11 @@ const server = Bun.serve({
 
 // The poller bootstraps its provider connection after the local server binds,
 // so health/SSE remain available while an offline provider is retrying.
+if (DESKTOP) {
+  startDesktopBridge();
+  desktopMessage({ type: "ready", port: server.port });
+}
+
 if (!REPLAY_DATE && !(process.env.MOCK && process.env.MOCK !== "0")) startAlertDelivery();
-startPoller();
+if (!DESKTOP || process.env.GEXBOT_API_KEY || REPLAY_DATE) startPoller();
 console.log(`GEX Cockpit → ${server.url}`);
