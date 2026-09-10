@@ -1,0 +1,58 @@
+name: Package desktop release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Signing credentials are available only to manually started builds of main.
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - os: macos-15
+            bundles: app,dmg
+          - os: macos-15-intel
+            bundles: app,dmg
+          - os: windows-2022
+            bundles: nsis
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: rustup show
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        with:
+          tauriScript: bun x tauri
+          args: --bundles ${{ matrix.bundles }}
+          tagName: v__VERSION__
+          releaseName: GEX Cockpit v__VERSION__
+          releaseBody: 'Desktop preview for Windows and Mac. Download the DMG or setup.exe below. These builds do not have Apple Developer ID or Windows publisher certificates; see docs/desktop.md for installation and known limitations.'
+          releaseDraft: true
+          prerelease: true
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true

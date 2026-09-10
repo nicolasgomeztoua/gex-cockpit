@@ -1,3 +1,4 @@
+import { DESKTOP } from "./desktop";
 import { enabledFeeds, enabledRules } from "./alert-engine";
 import { deliverNativeAlert } from "./alert-delivery";
 import { settingsFromUnknown } from "../client/theme";
@@ -148,7 +149,7 @@ export const api = new Hono()
     return c.json({
       events: alertStore.recent(),
       pending: alertStore.pending(),
-      delivery: process.platform === "darwin" ? "macOS" : "unsupported",
+      delivery: DESKTOP ? "desktop" : process.platform === "darwin" ? "macOS" : "unsupported",
       monitoring: !MOCK && !process.env.REPLAY,
       enabled: settings.alerts.enabled,
       selected: enabledRules(settings).size,

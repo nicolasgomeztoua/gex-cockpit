@@ -16,3 +16,10 @@ backups/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Native desktop build outputs
+src-tauri/target/
+src-tauri/binaries/
+src-tauri/gen/
+
+.*.bun-build

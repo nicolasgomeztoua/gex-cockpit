@@ -19,10 +19,11 @@ const CHART_BASE_URL = "https://api.gex.bot/v2";
 const CONVERSION_URL = "https://api.gex.bot/v2/futures/conversion";
 const USER_AGENT = "gex-cockpit/0.2.0 (local)";
 const STARTUP_TIMEOUT_MS = 3_000;
-const WARMUP_URL = `${CONVERSION_URL}?ticker=QQQ&future=NQ&model=affine`;
+// Warm a required chart feed; optional futures-conversion access must not block startup.
+const WARMUP_URL = `${CHART_BASE_URL}/NDX/state/gex_zero`;
 const requestQueue = new RecoveringSerialTaskQueue(
   async () => {
-    await rawRequestJson<RawConversion>(WARMUP_URL, STARTUP_TIMEOUT_MS);
+    await rawRequestJson<RawGexFull>(WARMUP_URL, STARTUP_TIMEOUT_MS);
   },
   {
     lost: () => console.warn(
@@ -140,7 +141,7 @@ async function requestJson<T>(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promis
  * and conversion request still uses the required one-second timeout.
  */
 export async function warmGexbotConnection(): Promise<void> {
-  await requestJson<RawConversion>(WARMUP_URL, STARTUP_TIMEOUT_MS);
+  await requestJson<RawGexFull>(WARMUP_URL, STARTUP_TIMEOUT_MS);
 }
 
 export async function fetchFeed(ticker: Ticker, kind: FeedKind): Promise<FeedSnapshot> {

@@ -2,7 +2,7 @@
 
 **[Español](README.es.md) · English**
 
-A local dashboard for viewing **State and Classic from [GexBot](https://www.gexbot.com) together** on the same NDX and QQQ charts. Compare gamma-exposure profiles and key levels, replay your recorded sessions, and receive desktop level alerts on macOS. It does not connect to a broker or place orders.
+A local dashboard for viewing **State and Classic from [GexBot](https://www.gexbot.com) together** on the same NDX and QQQ charts. Compare gamma-exposure profiles and key levels, replay your recorded sessions, and receive desktop level alerts on Windows and Mac. It does not connect to a broker or place orders.
 
 The app runs on your computer. Your API key, settings and recorded history stay there. It contacts GexBot for market data; open-source code does not include a data subscription or permission to redistribute provider data. This is an independent project, not an official GexBot or TradingView product.
 
@@ -23,7 +23,13 @@ Revisit a recorded session, move through its timeline, and control playback spee
 
 Both screenshots show a recorded session from September 1, 2026.
 
-## Let your AI agent install it
+## Download the desktop preview
+
+**[Download for Windows or Mac](https://github.com/nicolasgomeztoua/gex-cockpit/releases/tag/v0.3.0-beta.1)** — install it, choose English or Español, and enter your GexBot API key. No Bun, terminal or coding setup required.
+
+Use the **DMG** for your Mac (Apple Silicon or Intel), or **x64-setup.exe** for Windows 10/11. These preview installers are unsigned by Apple/Microsoft, so the first launch may show a security warning. See the short [desktop installation and updates guide](docs/desktop.md). Keep the app open for recording and alerts; closing its window quits it. Updates are optional and preserve your data.
+
+## Install from source with your AI agent
 
 Open this repository folder in an agent that can work on your computer and paste:
 
@@ -31,14 +37,14 @@ Open this repository folder in an agent that can work on your computer and paste
 
 No coding knowledge is needed. The agent should do the technical work and leave you simple start/stop instructions. The setup conversation can be Spanish; **the app interface currently uses English labels**.
 
-## What you need
+## What you need for a source installation
 
-- A computer with [Bun](https://bun.com/docs/installation), the program that runs the app. This checkout is tested with Bun **1.3.12**; use that version for reproducibility.
+- A computer with [Bun](https://bun.com/docs/installation), the program that runs the app. This checkout is tested with Bun **1.3.14**; use that version for reproducibility.
 - Your own GexBot API key with access to the required feeds. Confirm access and any price with GexBot before purchasing.
 - Internet access for live data and dependency installation.
 - macOS for native desktop alerts. Windows/Linux chart setup is not yet verified end to end; native alerts will not work there. Leave Level Alerts off on those systems.
 
-## Install manually
+## Install the source manually
 
 Choose **one** way to get the source:
 

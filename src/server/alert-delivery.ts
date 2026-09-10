@@ -1,3 +1,4 @@
+import { DESKTOP, desktopNotification } from "./desktop";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { LEVEL_META } from "../client/theme";
@@ -8,8 +9,15 @@ const sounds = { off: "", ping: "Ping", chime: "Glass", blip: "Pop" } as const;
 
 /** argv carries the content; never interpolate provider data into AppleScript or a shell. */
 export async function deliverNativeAlert(event: AlertEvent): Promise<void> {
-  if (process.platform !== "darwin") throw new Error("Desktop alert delivery requires macOS on the backend host");
   const name = LEVEL_META[event.level].name;
+  if (DESKTOP) {
+    return desktopNotification(
+      event.rule === "test" ? "GEX Cockpit — test alert" : `${event.ticker} touched ${name}`,
+      event.rule === "test" ? "Desktop alerts are ready." : `${name}: ${event.price.toFixed(2)} · spot: ${event.spot.toFixed(2)} (native units)`,
+      event.sound,
+    );
+  }
+  if (process.platform !== "darwin") throw new Error("Desktop alert delivery requires macOS on the backend host");
   await exec("/usr/bin/osascript", ["-e", `on run argv
     display notification (item 2 of argv) with title (item 1 of argv)
   end run`, event.rule === "test" ? "GEX Cockpit — test alert" : `${event.ticker} touched ${name}`, event.rule === "test" ? "Desktop alerts are sent by the backend." : `${name}: ${event.price.toFixed(2)} · spot: ${event.spot.toFixed(2)} (native units)`], { timeout: 10_000 });

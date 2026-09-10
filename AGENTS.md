@@ -8,7 +8,13 @@ For a new user's installation, your first response must be:
 
 Wait for their answer before commands or setup explanations. If they already chose a language in this conversation, keep using it. Explain everything in that language, with simple words. UI labels remain English; translate their meaning as you show the controls.
 
-## Set up the app
+## Desktop download (recommended for nontechnical users)
+
+After the language choice, prefer the official [desktop preview](https://github.com/nicolasgomeztoua/gex-cockpit/releases/tag/v0.3.0-beta.1) for Windows 10/11 x64 or macOS 13+ (choose Apple Silicon or Intel). Follow [docs/desktop.md](docs/desktop.md). Users enter their key directly into the app; never request it in chat. No Bun or source setup is needed. Explain the unsigned preview warning without disabling security controls. The first-run key check covers State and Classic; verify actual charts and feed timestamps separately. Test native alerts on the installed app. Closing its window stops collection and alerts. Updates are opt-in from Connection / Conexión and preserve the separate data folder.
+
+If they want source code, customization, or an existing source installation, follow the source steps below. Preserve that installation and its data; desktop uses a separate data folder.
+
+## Set up from source
 
 1. Identify the operating system and whether an installation already exists. Explain that Bun runs the app, the browser displays it, and a local SQLite file stores settings and history. Native alerts require macOS; leave Level Alerts off on Windows/Linux, where full setup is not yet verified.
 2. Ask whether they prefer an **agent-managed Git copy with optional updates** or a **ZIP without Git**. Explain that neither updates automatically, and a happy user never needs to use Git. Clone the official public source using HTTPS, or extract its source ZIP into a permanent folder. Record the release/commit or ZIP source. Do not invent a release tag or require a fork/account to clone a public repository.

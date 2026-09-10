@@ -1,3 +1,4 @@
+import { apiFetch } from "../desktop/connection";
 import { useEffect, useState } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
 
@@ -9,7 +10,7 @@ export function AlertStatus() {
     let stopped = false;
     const update = async () => {
       try {
-        const response = await fetch("/api/alerts", { signal: AbortSignal.timeout(10_000) });
+        const response = await apiFetch("/api/alerts", { signal: AbortSignal.timeout(10_000) });
         if (!response.ok) throw new Error();
         const data = await response.json();
         const failed = data.pending.some((e: { acknowledged: number; error: string | null }) => !e.acknowledged && e.error);
@@ -29,10 +30,10 @@ export function AlertStatus() {
   const test = async () => {
     setTestResult("Sending…");
     try {
-      const response = await fetch("/api/alerts/test", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const response = await apiFetch("/api/alerts/test", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       if (!response.ok) throw new Error();
-      setTestResult("Sent to macOS. Check for a banner and sound.");
-    } catch { setTestResult("Test failed — check the backend and macOS permissions."); }
+      setTestResult("Sent to your computer. Check for a banner and sound.");
+    } catch { setTestResult("Test failed — check the app and notification permissions."); }
   };
   return <div className="space-y-1 px-1.5 py-1 text-[11px] text-muted-foreground" role="status">
     <div>{saveStatus === "saved" ? "Settings saved on backend." : saveStatus === "saving" ? "Saving settings…"

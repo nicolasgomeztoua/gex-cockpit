@@ -3,6 +3,7 @@ import { join, relative, resolve } from "node:path";
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { api } from "./routes";
+import { DESKTOP, desktopAuth } from "./desktop";
 
 export type { AppType } from "./routes";
 
@@ -27,13 +28,15 @@ export function buildDist(): void {
   }
 }
 
-export const app = new Hono().route("/", api);
+export const app = new Hono();
+if (DESKTOP) app.use("*", desktopAuth(process.env.GEX_SESSION_TOKEN ?? "", process.env.GEX_DESKTOP_DEV === "1"));
+app.route("/", api);
 
 // Unknown API paths must stay 404s; the production SPA fallback is only for
 // browser navigation, never for a misspelled endpoint.
 app.all("/api/*", c => c.text("Not Found", 404));
 
-if (!isDev) {
+if (!isDev && !DESKTOP) {
   if (!existsSync(join(DIST_DIR, "index.html"))) buildDist();
   app.use("*", serveStatic({ root: distRelative }));
   const serveIndex = serveStatic({ path: `${distRelative}/index.html` });

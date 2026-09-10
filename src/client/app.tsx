@@ -1,3 +1,4 @@
+import { DesktopGate } from "./desktop/Setup";
 import { useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { GexChart } from "./GexChart";
@@ -147,4 +148,4 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(<DesktopGate><App /></DesktopGate>);

@@ -1,3 +1,4 @@
+import { openEventStream } from "../desktop/stream";
 import { create } from "zustand";
 import type {
   FeedKey,
@@ -40,7 +41,7 @@ let started = false;
 export function startStream(): void {
   if (started) return;
   started = true;
-  const es = new EventSource("/api/stream");
+  const es = openEventStream();
   const set = useStreamStore.setState;
 
   const applyInit = (init: InitPayload, historyRevision?: number) => {
