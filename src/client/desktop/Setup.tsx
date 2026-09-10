@@ -43,6 +43,7 @@ export function DesktopGate({ children }: { children: ReactNode }) {
     const edit = () => { setEditing(true); setKey(""); setError(""); };
     window.addEventListener("desktop-settings", edit);
     const off = listen("backend-exited", () => setError("BACKEND_FAILED"));
+    const offProvider = listen<string>("provider-error", event => { setEditing(true); setError(event.payload); });
     const external = (event: MouseEvent) => {
       const anchor = (event.target as Element).closest?.("a");
       if (anchor?.href.startsWith("https://")) {
@@ -51,7 +52,7 @@ export function DesktopGate({ children }: { children: ReactNode }) {
       }
     };
     document.addEventListener("click", external);
-    return () => { window.removeEventListener("desktop-settings", edit); document.removeEventListener("click", external); void off.then(unlisten => unlisten()); };
+    return () => { window.removeEventListener("desktop-settings", edit); document.removeEventListener("click", external); void off.then(unlisten => unlisten()); void offProvider.then(unlisten => unlisten()); };
   }, []);
   if (!isDesktop) return children;
   if (context?.hasKey && !editing && !error) return children;

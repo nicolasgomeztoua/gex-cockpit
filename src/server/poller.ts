@@ -1,4 +1,5 @@
 import { processLiveAlerts } from "./alerts";
+import { reportDesktopProviderError } from "./desktop";
 import {
   assertGexbotApiKey,
   fetchFeed,
@@ -148,6 +149,7 @@ async function pollLoop(ticker: Ticker, kind: FeedKind): Promise<void> {
       }
       delay = POLL_MS;
     } catch (err) {
+      reportDesktopProviderError(err);
       const msg = err instanceof Error ? err.message : String(err);
       const decision = retry.failed();
       delay = decision.delayMs;
@@ -219,6 +221,7 @@ async function bootstrap(start: () => void): Promise<void> {
       start();
       return;
     } catch (err) {
+      reportDesktopProviderError(err);
       const msg = err instanceof Error ? err.message : String(err);
       const decision = retry.failed();
       console.error(

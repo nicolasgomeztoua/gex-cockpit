@@ -126,6 +126,7 @@ async fn start_backend(app: &tauri::AppHandle, key: &str) -> Result<Running, Str
     let (ready_tx, ready_rx) = oneshot::channel();
     tauri::async_runtime::spawn(async move {
         let mut ready = Some(ready_tx);
+        let mut provider_error = String::new();
         while let Some(event) = events.recv().await {
             match event {
                 CommandEvent::Stdout(bytes) => {
@@ -137,6 +138,17 @@ async fn start_backend(app: &tauri::AppHandle, key: &str) -> Result<Running, Str
                             if let Some(tx) = ready.take() {
                                 let _ =
                                     tx.send(msg["port"].as_u64().filter(|p| *p > 0 && *p <= 65535));
+                            }
+                        }
+                        Some("provider-error") => {
+                            if let Some(code) = msg["code"]
+                                .as_str()
+                                .filter(|code| ["KEY_REJECTED", "ACCESS_DENIED"].contains(code))
+                            {
+                                if code != provider_error {
+                                    provider_error = code.to_owned();
+                                    let _ = handle.emit("provider-error", code);
+                                }
                             }
                         }
                         Some("notification") => {
@@ -251,6 +263,9 @@ fn key_status(status: u16) -> Result<(), String> {
     }
 }
 async fn validate_key(key: &str) -> Result<(), String> {
+    validate_key_at(key, "https://api.gex.bot/v2").await
+}
+async fn validate_key_at(key: &str, base: &str) -> Result<(), String> {
     if key.trim().is_empty() || key.len() > 1024 || key.chars().any(char::is_control) {
         return Err("KEY_REJECTED".into());
     }
@@ -263,7 +278,7 @@ async fn validate_key(key: &str) -> Result<(), String> {
     for ticker in ["NDX", "QQQ"] {
         for feed in ["state/gex_zero", "classic/gex_full"] {
             let response = http
-                .get(format!("https://api.gex.bot/v2/{ticker}/{feed}"))
+                .get(format!("{base}/{ticker}/{feed}"))
                 .bearer_auth(key)
                 .send()
                 .await
@@ -301,13 +316,17 @@ async fn save_key(
 
 #[tauri::command]
 fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
-    if ![
-        "https://www.gexbot.com/",
-        "https://www.tradingview.com/",
-        "https://github.com/nicolasgomeztoua/gex-cockpit/releases",
-    ]
-    .contains(&url.as_str())
-    {
+    let parsed = tauri::Url::parse(&url).map_err(|_| "Link unavailable")?;
+    let allowed = parsed.scheme() == "https"
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && parsed.port().is_none()
+        && match parsed.host_str() {
+            Some("www.gexbot.com" | "www.tradingview.com") => parsed.path() == "/",
+            Some("github.com") => parsed.path() == "/nicolasgomeztoua/gex-cockpit/releases",
+            _ => false,
+        };
+    if !allowed {
         return Err("Link unavailable".into());
     }
     app.opener()
@@ -411,12 +430,80 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+
+    fn provider(
+        responses: Vec<(u16, &'static str)>,
+    ) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let worker = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            for (status, body) in responses {
+                let mut connection = loop {
+                    if let Ok((connection, _)) = listener.accept() {
+                        break connection;
+                    }
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "Provider request never arrived"
+                    );
+                    std::thread::sleep(Duration::from_millis(5));
+                };
+                connection
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut bytes = [0u8; 4096];
+                let mut request = String::new();
+                while !request.contains("\r\n\r\n") {
+                    let count = connection.read(&mut bytes).unwrap();
+                    assert!(count > 0);
+                    request.push_str(&String::from_utf8_lossy(&bytes[..count]));
+                }
+                requests.push(request);
+                write!(connection, "HTTP/1.1 {status} Response\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\nLocation: http://127.0.0.1:1/do-not-follow\r\n\r\n{body}", body.len()).unwrap();
+            }
+            requests
+        });
+        (base, worker)
+    }
+
     #[test]
-    fn provider_errors_are_actionable_and_never_contain_response_bodies() {
-        assert!(key_status(200).is_ok());
-        assert_eq!(key_status(401).unwrap_err(), "KEY_REJECTED");
-        assert_eq!(key_status(403).unwrap_err(), "ACCESS_DENIED");
-        assert_eq!(key_status(429).unwrap_err(), "RATE_LIMITED");
-        assert_eq!(key_status(502).unwrap_err(), "PROVIDER_UNAVAILABLE");
+    fn checks_both_required_packages_for_both_tickers_with_provider_headers() {
+        let (base, worker) = provider(vec![(200, r#"{"spot":123,"timestamp":123}"#); 4]);
+        assert!(tauri::async_runtime::block_on(validate_key_at("test-key", &base)).is_ok());
+        let requests = worker.join().unwrap();
+        for (request, path) in requests.iter().zip([
+            "NDX/state/gex_zero",
+            "NDX/classic/gex_full",
+            "QQQ/state/gex_zero",
+            "QQQ/classic/gex_full",
+        ]) {
+            assert!(request.contains(&format!("GET /{path} ")));
+            assert!(request
+                .to_lowercase()
+                .contains("authorization: bearer test-key"));
+            assert!(request.to_lowercase().contains("user-agent: gex-cockpit/"));
+        }
+    }
+
+    #[test]
+    fn rejects_auth_errors_invalid_payloads_and_redirects_without_exposing_bodies() {
+        for (status, body, expected) in [
+            (401, "private provider response", "KEY_REJECTED"),
+            (403, "", "ACCESS_DENIED"),
+            (429, "", "RATE_LIMITED"),
+            (302, "", "PROVIDER_UNAVAILABLE"),
+            (200, "{}", "PROVIDER_UNAVAILABLE"),
+        ] {
+            let (base, worker) = provider(vec![(status, body)]);
+            assert_eq!(
+                tauri::async_runtime::block_on(validate_key_at("test-key", &base)).unwrap_err(),
+                expected
+            );
+            assert_eq!(worker.join().unwrap().len(), 1);
+        }
     }
 }

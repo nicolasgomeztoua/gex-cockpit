@@ -36,6 +36,12 @@ export function desktopMessage(message: object): void {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 }
 
+export function reportDesktopProviderError(error: unknown): void {
+  if (!DESKTOP || !(error instanceof Error)) return;
+  const status = /\bHTTP (401|403)\b/.exec(error.message)?.[1];
+  if (status) desktopMessage({ type: "provider-error", code: status === "401" ? "KEY_REJECTED" : "ACCESS_DENIED" });
+}
+
 export function startDesktopBridge(): void {
   const input = createInterface({ input: process.stdin });
   input.on("line", line => {
